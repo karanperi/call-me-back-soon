@@ -88,8 +88,8 @@ serve(async (req) => {
 
     if (!elevenLabsResponse.ok) {
       const errorText = await elevenLabsResponse.text();
-      console.error("ElevenLabs API error:", errorText);
-      throw new Error(`ElevenLabs API error: ${elevenLabsResponse.status}`);
+      console.error("Speech generation error:", errorText);
+      throw new Error("speech_generation_failed");
     }
 
     // Get audio as ArrayBuffer
@@ -109,16 +109,21 @@ serve(async (req) => {
 
     if (uploadError) {
       console.error("Storage upload error:", uploadError);
-      throw new Error(`Failed to upload audio: ${uploadError.message}`);
+      throw new Error("audio_upload_failed");
     }
 
-    // Get public URL for the audio file
-    const { data: publicUrlData } = supabase.storage
+    // Create a signed URL with 1 hour expiration for Twilio to access the audio
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from("call-audio")
-      .getPublicUrl(audioFileName);
+      .createSignedUrl(audioFileName, 3600); // 1 hour expiration
 
-    const audioUrl = publicUrlData.publicUrl;
-    console.log(`Audio uploaded: ${audioUrl}`);
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error("Signed URL error:", signedUrlError);
+      throw new Error("audio_url_generation_failed");
+    }
+
+    const audioUrl = signedUrlData.signedUrl;
+    console.log(`Audio uploaded with signed URL`);
 
     // Step 3: Make the call with Twilio
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`;
@@ -150,11 +155,11 @@ serve(async (req) => {
     const twilioResult = await twilioResponse.json();
 
     if (!twilioResponse.ok) {
-      console.error("Twilio API error:", twilioResult);
-      throw new Error(`Twilio API error: ${twilioResult.message || twilioResponse.status}`);
+      console.error("Call delivery error:", twilioResult);
+      throw new Error("call_delivery_failed");
     }
 
-    console.log(`Call initiated. Twilio SID: ${twilioResult.sid}`);
+    console.log(`Call initiated. Call SID: ${twilioResult.sid}`);
 
     // Step 4: Create call history record with service role (bypasses RLS)
     const { error: historyError } = await supabase.from("call_history").insert({
@@ -182,11 +187,27 @@ serve(async (req) => {
     );
 
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Internal server error";
+    const errorCode = error instanceof Error ? error.message : "internal_error";
     console.error("Error in make-call function:", error);
+    
+    // Return generic error messages to clients
+    const clientMessage = getClientErrorMessage(errorCode);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: clientMessage }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
+
+// Map internal error codes to safe client-facing messages
+function getClientErrorMessage(errorCode: string): string {
+  const errorMessages: Record<string, string> = {
+    "speech_generation_failed": "Failed to generate audio for your call",
+    "audio_upload_failed": "Failed to prepare audio for your call",
+    "audio_url_generation_failed": "Failed to prepare audio for your call",
+    "call_delivery_failed": "Failed to initiate the call",
+    "internal_error": "An unexpected error occurred",
+  };
+  
+  return errorMessages[errorCode] || "An unexpected error occurred";
+}
