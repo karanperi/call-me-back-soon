@@ -81,11 +81,9 @@ export function generateMedicationMessage(
   dosage: string | undefined,
   instruction: InstructionKey
 ): string {
-  // Default to a generic name if not provided
-  const name = recipientName.trim() || "there";
   const medication = medicationName.trim() || "medication";
   
-  let message = `Hello ${name}. This is your medication reminder. It's time to take your ${medication}`;
+  let message = `This is your medication reminder. It's time to take your ${medication}`;
   
   // Add dosage if provided
   if (dosage?.trim()) {
