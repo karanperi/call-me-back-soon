@@ -71,14 +71,18 @@ export const InternationalPhoneInput = ({
           const currentE164 = currentValidation.e164;
           
           // Only update if the value actually changed from external source
-          if (value !== currentE164) {
-            setSelectedCountry(country);
-            setLocalNumber(parsed.nationalNumber);
-            const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
-            setIsValid(validation.isValid);
-            // Clear any previous validation errors when selecting a valid contact
-            setValidationError(validation.isValid ? undefined : validation.error);
+        if (value !== currentE164) {
+          setSelectedCountry(country);
+          setLocalNumber(parsed.nationalNumber);
+          const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
+          setIsValid(validation.isValid);
+          setValidationError(validation.isValid ? undefined : validation.error);
+          
+          // Notify parent of the validated value
+          if (validation.isValid && validation.e164) {
+            onChange(validation.e164, true);
           }
+        }
         }
       }
     } else if (value === "" && localNumber !== "") {
