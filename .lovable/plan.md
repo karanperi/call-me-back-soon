@@ -1,115 +1,83 @@
 
-# Fix: Contact Selection Not Populating Phone Number
+# Fix: Phone Number Validation State Not Syncing to Parent
 
 ## Problem Identified
 
-The `InternationalPhoneInput` component has a bug in its `useEffect` hook that initializes the local number from the `value` prop. The effect has an **empty dependency array** (`[]`), meaning it only runs once when the component mounts.
+When a contact is selected from the contact picker, the `InternationalPhoneInput` component correctly parses and validates the phone number internally, but it **never notifies the parent component** that the phone number is valid.
 
-**Current Code (lines 63-77 in `InternationalPhoneInput.tsx`):**
+**The bug is in the `useEffect` hook (lines 63-90) of `InternationalPhoneInput.tsx`:**
+
 ```javascript
-useEffect(() => {
-  if (value && value.startsWith("+")) {
-    const parsed = parseInternationalNumber(value);
-    if (parsed) {
-      const country = getCountryByCode(parsed.countryCode);
-      if (country) {
-        setSelectedCountry(country);
-        setLocalNumber(parsed.nationalNumber);
-        const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
-        setIsValid(validation.isValid);
-      }
-    }
-  }
-}, []); // <-- Empty dependency array is the bug!
+// This code sets internal state...
+setIsValid(validation.isValid);
+setValidationError(validation.isValid ? undefined : validation.error);
+// ...but never calls onChange() to tell the parent!
 ```
 
-**What happens:**
-1. User opens the Create Reminder dialog (component mounts with empty `value`)
-2. User clicks contact picker and selects "Bhavana"
-3. Parent component calls `setPhoneNumber("+447723785463")`
-4. The `value` prop updates, but the `useEffect` doesn't re-run
-5. The input field stays empty despite the parent state being updated
+**Result:**
+- Component's internal `isValid` = `true` (cost estimate shows)
+- Parent's `isPhoneValid` = `false` (never updated)
+- Form submission fails validation
 
 ---
 
 ## Solution
 
-Update the `useEffect` to watch for changes to the `value` prop. We also need to add logic to avoid overwriting user-typed input when the value is updated programmatically.
+Add an `onChange` call in the `useEffect` to sync the validation state with the parent component when a contact is selected.
 
 **File to Modify:** `src/components/phone/InternationalPhoneInput.tsx`
 
+**Change:** After validating the incoming phone number in the `useEffect`, call `onChange` with the E.164 value and validity status.
+
 ---
 
-## Technical Changes
+## Technical Details
 
-### Change 1: Update the useEffect Dependency Array
+### Current Code (lines 74-81)
 
-Add `value` to the dependency array and add a guard to prevent infinite loops by checking if the new value differs from what we already have.
-
-**Updated Code:**
 ```javascript
-// Initialize/update local number from value prop
-useEffect(() => {
-  if (value && value.startsWith("+")) {
-    const parsed = parseInternationalNumber(value);
-    if (parsed) {
-      const country = getCountryByCode(parsed.countryCode);
-      if (country) {
-        // Only update if the value actually changed from external source
-        const currentValidation = validatePhoneNumber(localNumber, selectedCountry.code as CountryCode);
-        const currentE164 = currentValidation.e164;
-        
-        // Avoid updating if we already have this value (prevents loops)
-        if (value !== currentE164) {
-          setSelectedCountry(country);
-          setLocalNumber(parsed.nationalNumber);
-          const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
-          setIsValid(validation.isValid);
-          // Notify parent that we've processed the value
-          if (validation.isValid && validation.e164) {
-            // Value is already valid, no need to call onChange
-          }
-        }
-      }
-    }
-  } else if (value === "" && localNumber !== "") {
-    // Handle reset case (when form is cleared)
-    setLocalNumber("");
-    setIsValid(false);
-    setValidationError(undefined);
-  }
-}, [value]);
+if (value !== currentE164) {
+  setSelectedCountry(country);
+  setLocalNumber(parsed.nationalNumber);
+  const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
+  setIsValid(validation.isValid);
+  setValidationError(validation.isValid ? undefined : validation.error);
+}
 ```
 
-### Change 2: Handle Empty Value Reset
+### Updated Code
 
-When the parent resets the form (sets `phoneNumber` to `""`), the component should clear its local state.
-
----
-
-## Why This Fix Works
-
-1. **Watches for value changes**: Adding `value` to the dependency array ensures the effect runs whenever the parent updates the phone number
-2. **Prevents infinite loops**: By comparing the incoming `value` with the current E.164 output, we avoid re-processing values we just set ourselves
-3. **Handles form reset**: When `value` becomes empty (form reset), the local state is cleared
-
----
-
-## Testing Scenarios
-
-After implementation, verify these scenarios work:
-
-1. **Select contact in Create Reminder** - phone field should populate with formatted number
-2. **Select different contact** - phone field should update to new number
-3. **Create new reminder and cancel** - form should reset properly when reopened
-4. **Paste international number** - should still work as before
-5. **Type number manually** - should still work as before
-6. **Edit existing reminder** - should still load the existing phone number
+```javascript
+if (value !== currentE164) {
+  setSelectedCountry(country);
+  setLocalNumber(parsed.nationalNumber);
+  const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
+  setIsValid(validation.isValid);
+  setValidationError(validation.isValid ? undefined : validation.error);
+  
+  // Notify parent of the validated value
+  if (validation.isValid && validation.e164) {
+    onChange(validation.e164, true);
+  }
+}
+```
 
 ---
 
-## Summary
+## Why This Fixes the Issue
 
-| File | Change |
-|------|--------|
-| `src/components/phone/InternationalPhoneInput.tsx` | Add `value` to useEffect dependencies and add guards against infinite loops |
+1. When a contact is selected, the parent sets `phoneNumber` to the E.164 value
+2. The `useEffect` detects the value change and parses it
+3. After validation, it now calls `onChange(e164, true)` 
+4. The parent's `handlePhoneChange` updates `isPhoneValid` to `true`
+5. Form submission validation passes
+
+---
+
+## Testing
+
+After the fix, verify:
+1. Select a contact - phone should populate AND form should submit successfully
+2. Select different contacts - should work each time
+3. Manual entry - should still work as before
+4. Paste international number - should still work as before
