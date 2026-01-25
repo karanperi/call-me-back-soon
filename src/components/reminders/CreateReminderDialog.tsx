@@ -22,8 +22,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CalendarIcon, X, Globe } from "lucide-react";
-import { useState } from "react";
-import { format } from "date-fns";
+import { useState, useEffect, useCallback } from "react";
+import { format, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
@@ -42,15 +42,47 @@ export const CreateReminderDialog = ({
   open,
   onOpenChange,
 }: CreateReminderDialogProps) => {
+  const getDefaultDateTime = useCallback((tz: string) => {
+    const now = new Date();
+    const oneMinuteFromNow = addMinutes(now, 1);
+    const zonedTime = toZonedTime(oneMinuteFromNow, tz);
+    return {
+      date: zonedTime,
+      time: format(zonedTime, "HH:mm"),
+    };
+  }, []);
+
+  const defaultTz = getDefaultTimezone();
+  const defaultDateTime = getDefaultDateTime(defaultTz);
+
   const [recipientName, setRecipientName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("+44 ");
   const [message, setMessage] = useState("");
-  const [date, setDate] = useState<Date>();
-  const [time, setTime] = useState("09:00");
+  const [date, setDate] = useState<Date | undefined>(defaultDateTime.date);
+  const [time, setTime] = useState(defaultDateTime.time);
   const [frequency, setFrequency] = useState<Frequency>("once");
   const [voice, setVoice] = useState<Voice>("friendly_female");
-  const [timezone, setTimezone] = useState(getDefaultTimezone());
+  const [timezone, setTimezone] = useState(defaultTz);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+
+  // Update date and time when timezone changes
+  const handleTimezoneChange = (newTimezone: string) => {
+    if (date && time) {
+      // Convert current date/time from old timezone to UTC, then to new timezone
+      const [hours, minutes] = time.split(":").map(Number);
+      const currentDateTime = new Date(date);
+      currentDateTime.setHours(hours, minutes, 0, 0);
+      
+      // Convert from old timezone to UTC
+      const utcTime = fromZonedTime(currentDateTime, timezone);
+      // Convert from UTC to new timezone
+      const newZonedTime = toZonedTime(utcTime, newTimezone);
+      
+      setDate(newZonedTime);
+      setTime(format(newZonedTime, "HH:mm"));
+    }
+    setTimezone(newTimezone);
+  };
 
   const createReminder = useCreateReminder();
 
@@ -115,14 +147,16 @@ export const CreateReminderDialog = ({
   };
 
   const resetForm = () => {
+    const newTz = getDefaultTimezone();
+    const newDefaults = getDefaultDateTime(newTz);
     setRecipientName("");
     setPhoneNumber("+44 ");
     setMessage("");
-    setDate(undefined);
-    setTime("09:00");
+    setDate(newDefaults.date);
+    setTime(newDefaults.time);
     setFrequency("once");
     setVoice("friendly_female");
-    setTimezone(getDefaultTimezone());
+    setTimezone(newTz);
   };
 
   // Get start of today for calendar minimum date
@@ -232,7 +266,7 @@ export const CreateReminderDialog = ({
                 <Globe className="h-3.5 w-3.5" />
                 Timezone
               </Label>
-              <Select value={timezone} onValueChange={setTimezone}>
+              <Select value={timezone} onValueChange={handleTimezoneChange}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Select timezone" />
                 </SelectTrigger>
