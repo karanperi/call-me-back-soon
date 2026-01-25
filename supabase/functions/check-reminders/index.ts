@@ -6,6 +6,173 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Helper functions for date manipulation
+function addDays(date: Date, days: number): Date {
+  const result = new Date(date);
+  result.setDate(result.getDate() + days);
+  return result;
+}
+
+function addWeeks(date: Date, weeks: number): Date {
+  return addDays(date, weeks * 7);
+}
+
+function addMonths(date: Date, months: number): Date {
+  const result = new Date(date);
+  result.setMonth(result.getMonth() + months);
+  return result;
+}
+
+function addYears(date: Date, years: number): Date {
+  const result = new Date(date);
+  result.setFullYear(result.getFullYear() + years);
+  return result;
+}
+
+function getDay(date: Date): number {
+  return date.getDay();
+}
+
+function setDay(date: Date, day: number): Date {
+  const result = new Date(date);
+  const currentDay = result.getDay();
+  const diff = day - currentDay;
+  result.setDate(result.getDate() + diff);
+  return result;
+}
+
+// Calculate next occurrence based on recurrence rules
+function calculateNextSchedule(reminder: any): Date | null {
+  const current = new Date(reminder.scheduled_at);
+  const interval = reminder.recurrence_interval || 1;
+  const frequency = reminder.frequency;
+  const daysOfWeek = reminder.recurrence_days_of_week;
+
+  switch (frequency) {
+    case "once":
+      return null; // One-time reminders don't recur
+
+    case "daily":
+      return addDays(current, interval);
+
+    case "weekly":
+      return addWeeks(current, interval);
+
+    case "monthly": {
+      // For monthly, handle both day-of-month and week-of-month
+      const weekOfMonth = reminder.recurrence_week_of_month;
+      if (weekOfMonth !== null && weekOfMonth !== undefined) {
+        // Week of month style (e.g., "first Monday")
+        let nextMonth = addMonths(current, interval);
+        const dayOfWeekForMonthly = reminder.recurrence_day_of_week || getDay(current);
+        
+        // Find the nth weekday of the month
+        const year = nextMonth.getFullYear();
+        const month = nextMonth.getMonth();
+        
+        if (weekOfMonth === -1) {
+          // Last occurrence of the weekday
+          const lastDay = new Date(year, month + 1, 0);
+          let targetDate = lastDay;
+          while (getDay(targetDate) !== dayOfWeekForMonthly) {
+            targetDate = addDays(targetDate, -1);
+          }
+          nextMonth.setDate(targetDate.getDate());
+        } else {
+          // First/second/third/fourth occurrence
+          const firstOfMonth = new Date(year, month, 1);
+          let count = 0;
+          let targetDate = firstOfMonth;
+          while (count < weekOfMonth) {
+            if (getDay(targetDate) === dayOfWeekForMonthly) {
+              count++;
+              if (count === weekOfMonth) break;
+            }
+            targetDate = addDays(targetDate, 1);
+          }
+          nextMonth.setDate(targetDate.getDate());
+        }
+        
+        // Preserve time from original
+        nextMonth.setHours(current.getHours(), current.getMinutes(), current.getSeconds());
+        return nextMonth;
+      } else {
+        // Day of month style (e.g., "15th of each month")
+        return addMonths(current, interval);
+      }
+    }
+
+    case "yearly":
+      return addYears(current, interval);
+
+    case "weekdays": {
+      // Find next weekday (Mon-Fri)
+      let next = addDays(current, 1);
+      while (getDay(next) === 0 || getDay(next) === 6) {
+        next = addDays(next, 1);
+      }
+      return next;
+    }
+
+    case "weekends": {
+      // Find next weekend day (Sat-Sun)
+      let next = addDays(current, 1);
+      while (getDay(next) !== 0 && getDay(next) !== 6) {
+        next = addDays(next, 1);
+      }
+      return next;
+    }
+
+    case "custom": {
+      if (daysOfWeek && daysOfWeek.length > 0) {
+        // Find the next day in the selected days
+        const currentDayOfWeek = getDay(current);
+        const sortedDays = [...daysOfWeek].sort((a: number, b: number) => a - b);
+        
+        // Find next day this week
+        const nextDayThisWeek = sortedDays.find((d: number) => d > currentDayOfWeek);
+        
+        if (nextDayThisWeek !== undefined) {
+          return setDay(current, nextDayThisWeek);
+        } else {
+          // Move to next interval and get the first day
+          const nextWeek = addWeeks(current, interval);
+          return setDay(nextWeek, sortedDays[0]);
+        }
+      }
+      // Fallback to daily with interval
+      return addDays(current, interval);
+    }
+
+    default:
+      return null;
+  }
+}
+
+// Check if reminder should continue based on end conditions
+function shouldContinue(reminder: any, nextScheduledAt: Date): boolean {
+  // Check max occurrences
+  const maxOccurrences = reminder.max_occurrences;
+  if (maxOccurrences !== null && maxOccurrences !== undefined) {
+    if (reminder.repeat_count >= maxOccurrences) {
+      return false;
+    }
+  }
+
+  // Check repeat_until date
+  const repeatUntil = reminder.repeat_until ? new Date(reminder.repeat_until) : null;
+  if (repeatUntil && nextScheduledAt > repeatUntil) {
+    return false;
+  }
+
+  // Default max of 30 occurrences as safety limit
+  if (reminder.repeat_count >= 30 && !maxOccurrences) {
+    return false;
+  }
+
+  return true;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -82,16 +249,10 @@ serve(async (req) => {
         results.push({ reminderId: reminder.id, success: response.ok });
 
         // Handle recurring reminders
-        if (reminder.frequency !== "once" && reminder.repeat_count < 30) {
-          let nextScheduledAt = new Date(reminder.scheduled_at);
-          if (reminder.frequency === "daily") {
-            nextScheduledAt.setDate(nextScheduledAt.getDate() + 1);
-          } else if (reminder.frequency === "weekly") {
-            nextScheduledAt.setDate(nextScheduledAt.getDate() + 7);
-          }
-
-          const repeatUntil = reminder.repeat_until ? new Date(reminder.repeat_until) : null;
-          if (!repeatUntil || nextScheduledAt <= repeatUntil) {
+        if (reminder.frequency !== "once") {
+          const nextScheduledAt = calculateNextSchedule(reminder);
+          
+          if (nextScheduledAt && shouldContinue(reminder, nextScheduledAt)) {
             await supabase
               .from("reminders")
               .update({
@@ -99,13 +260,19 @@ serve(async (req) => {
                 repeat_count: reminder.repeat_count + 1,
               })
               .eq("id", reminder.id);
+            
+            console.log(`Rescheduled reminder ${reminder.id} to ${nextScheduledAt.toISOString()}`);
           } else {
+            // Deactivate the reminder if it shouldn't continue
             await supabase
               .from("reminders")
               .update({ is_active: false })
               .eq("id", reminder.id);
+            
+            console.log(`Deactivated reminder ${reminder.id} - recurrence ended`);
           }
-        } else if (reminder.frequency === "once") {
+        } else {
+          // One-time reminder - deactivate after execution
           await supabase
             .from("reminders")
             .update({ is_active: false })

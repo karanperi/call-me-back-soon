@@ -34,14 +34,16 @@ import {
 import { CalendarIcon, X, Trash2, Phone, Loader2, Globe } from "lucide-react";
 import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { TestCallConfirmation } from "./TestCallConfirmation";
+import { FrequencyPicker } from "./FrequencyPicker";
 import { useState, useEffect } from "react";
-import { format } from "date-fns";
+import { format, getDay } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useUpdateReminder, useDeleteReminder, Reminder } from "@/hooks/useReminders";
 import { useMakeCall } from "@/hooks/useMakeCall";
 import { TIMEZONES, getDefaultTimezone } from "@/lib/timezones";
+import { FrequencyConfig, dbFieldsToConfig, configToDbFields, getDefaultConfig } from "@/lib/recurrenceUtils";
 
 interface EditReminderDialogProps {
   open: boolean;
@@ -49,7 +51,6 @@ interface EditReminderDialogProps {
   reminder: Reminder | null;
 }
 
-type Frequency = "once" | "daily" | "weekly";
 type Voice = "friendly_female" | "friendly_male";
 
 export const EditReminderDialog = ({
@@ -63,7 +64,9 @@ export const EditReminderDialog = ({
   const [message, setMessage] = useState("");
   const [date, setDate] = useState<Date>();
   const [time, setTime] = useState("09:00");
-  const [frequency, setFrequency] = useState<Frequency>("once");
+  const [frequencyConfig, setFrequencyConfig] = useState<FrequencyConfig>(
+    getDefaultConfig("once", new Date())
+  );
   const [voice, setVoice] = useState<Voice>("friendly_female");
   const [timezone, setTimezone] = useState(getDefaultTimezone());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -115,7 +118,17 @@ export const EditReminderDialog = ({
       setDate(zonedDate);
       setTime(format(zonedDate, "HH:mm"));
       
-      setFrequency(reminder.frequency as Frequency);
+      // Convert reminder to FrequencyConfig
+      const config = dbFieldsToConfig({
+        frequency: reminder.frequency,
+        recurrence_interval: (reminder as any).recurrence_interval,
+        recurrence_days_of_week: (reminder as any).recurrence_days_of_week,
+        recurrence_day_of_month: (reminder as any).recurrence_day_of_month,
+        recurrence_week_of_month: (reminder as any).recurrence_week_of_month,
+        repeat_until: reminder.repeat_until,
+        max_occurrences: (reminder as any).max_occurrences,
+      });
+      setFrequencyConfig(config);
       setVoice(reminder.voice as Voice);
     }
   }, [reminder]);
@@ -163,13 +176,20 @@ export const EditReminderDialog = ({
     const shouldActivate = scheduledAt > new Date();
 
     try {
+      const dbFields = configToDbFields(frequencyConfig);
       await updateReminder.mutateAsync({
         id: reminder.id,
         recipient_name: recipientName.trim(),
         phone_number: phoneNumber, // Already in E.164 format
         message: message.trim(),
         scheduled_at: scheduledAt.toISOString(),
-        frequency,
+        frequency: dbFields.frequency,
+        recurrence_interval: dbFields.recurrence_interval,
+        recurrence_days_of_week: dbFields.recurrence_days_of_week,
+        recurrence_day_of_month: dbFields.recurrence_day_of_month,
+        recurrence_week_of_month: dbFields.recurrence_week_of_month,
+        repeat_until: dbFields.repeat_until,
+        max_occurrences: dbFields.max_occurrences,
         voice,
         is_active: shouldActivate ? true : reminder.is_active,
       });
@@ -345,26 +365,11 @@ export const EditReminderDialog = ({
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>Frequency</Label>
-                <div className="flex gap-2">
-                  {(["once", "daily", "weekly"] as Frequency[]).map((f) => (
-                    <button
-                      key={f}
-                      type="button"
-                      onClick={() => setFrequency(f)}
-                      className={cn(
-                        "flex-1 py-2 px-3 rounded-full text-sm font-medium transition-colors",
-                        frequency === f
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                      )}
-                    >
-                      {f.charAt(0).toUpperCase() + f.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <FrequencyPicker
+                referenceDate={date || new Date()}
+                value={frequencyConfig}
+                onChange={setFrequencyConfig}
+              />
             </div>
 
             {/* Message */}
