@@ -1,159 +1,74 @@
 
+# Fix: Keep In-Progress Calls in Active List, Exclude from History
 
-# Feature: Duplicate Call from History
+## Problem
 
-## Overview
+When a call is initiated, the `call_history` record is created with `status: "in_progress"`. Currently, this call appears in BOTH:
+- The Active calls list on the Home page (correct)
+- The History page (incorrect - should only show finalized calls)
 
-Add a "Duplicate" button to the call history detail dialog that opens the create reminder form pre-filled with the call's metadata.
+## Current Behavior vs Expected
 
----
+| Scenario | Current | Expected |
+|----------|---------|----------|
+| Call in progress | Shows in Active + History | Shows ONLY in Active |
+| Call finalized | Shows in History | Shows in History |
 
-## Data Mapping
+## Root Cause
 
-| Call History Field | Create Reminder Field | Notes |
-|-------------------|----------------------|-------|
-| `recipient_name` | Recipient Name | Direct copy |
-| `phone_number` | Phone Number | Already E.164 format |
-| `message` | Message | Direct copy |
-| `voice` | Voice | Direct copy |
-| N/A | Date/Time | Fresh default (now + 1 min) |
-| N/A | Frequency | Default to "once" |
-
----
-
-## Technical Changes
-
-### 1. Update CreateReminderDialog to Accept Initial Data
-
-**File:** `src/components/reminders/CreateReminderDialog.tsx`
-
-Add an optional `initialData` prop to pre-populate form fields:
+In `src/hooks/useCallHistory.ts`, when no filter is provided (the "All" view on History page), the query fetches ALL records including in-progress ones:
 
 ```typescript
-interface InitialReminderData {
-  recipientName?: string;
-  phoneNumber?: string;
-  message?: string;
-  voice?: "friendly_female" | "friendly_male";
+if (filter) {
+  query = query.eq("status", filter);
 }
+// No exclusion when filter is undefined
+```
 
-interface CreateReminderDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  initialData?: InitialReminderData;  // New prop
+## Solution
+
+Update `useCallHistory.ts` to exclude `in_progress` and `pending` statuses when no specific filter is provided:
+
+```typescript
+if (filter) {
+  query = query.eq("status", filter);
+} else {
+  // Exclude in-progress and pending from "All" view
+  query = query.not("status", "in", "(in_progress,pending)");
 }
 ```
 
-Use `useEffect` to populate form state when `initialData` changes:
-
-```typescript
-useEffect(() => {
-  if (initialData && open) {
-    if (initialData.recipientName) setRecipientName(initialData.recipientName);
-    if (initialData.phoneNumber) {
-      setPhoneNumber(initialData.phoneNumber);
-      setIsPhoneValid(true); // Trust the existing E.164 format
-    }
-    if (initialData.message) setMessage(initialData.message);
-    if (initialData.voice) setVoice(initialData.voice);
-  }
-}, [initialData, open]);
-```
-
-### 2. Add Duplicate Button to CallHistoryDetailDialog
-
-**File:** `src/components/history/CallHistoryDetailDialog.tsx`
-
-Add a callback prop for the duplicate action:
-
-```typescript
-interface CallHistoryDetailDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  callHistory: CallHistory | null;
-  onDuplicate?: (callHistory: CallHistory) => void;  // New prop
-}
-```
-
-Add a "Duplicate" button at the bottom of the dialog:
-
-```tsx
-<Button
-  onClick={() => {
-    onDuplicate?.(callHistory);
-    onOpenChange(false);
-  }}
-  className="w-full"
-  variant="outline"
->
-  <Copy className="h-4 w-4 mr-2" />
-  Duplicate as New Reminder
-</Button>
-```
-
-### 3. Wire Up in History Page
-
-**File:** `src/pages/History.tsx`
-
-Add state and handlers:
-
-```typescript
-const [createDialogOpen, setCreateDialogOpen] = useState(false);
-const [duplicateData, setDuplicateData] = useState<InitialReminderData | undefined>();
-
-const handleDuplicate = (call: CallHistory) => {
-  setDuplicateData({
-    recipientName: call.recipient_name,
-    phoneNumber: call.phone_number,
-    message: call.message,
-    voice: call.voice as "friendly_female" | "friendly_male",
-  });
-  setCreateDialogOpen(true);
-};
-```
-
-Render the CreateReminderDialog:
-
-```tsx
-<CreateReminderDialog
-  open={createDialogOpen}
-  onOpenChange={setCreateDialogOpen}
-  initialData={duplicateData}
-/>
-```
-
----
-
-## User Flow
+## Data Flow After Fix
 
 ```text
-History Page
-    |
-    v
-Click call card --> CallHistoryDetailDialog opens
-    |
-    v
-Click "Duplicate" button
-    |
-    v
-CallHistoryDetailDialog closes
-    |
-    v
-CreateReminderDialog opens with pre-filled:
-  - Recipient Name
-  - Phone Number  
-  - Message
-  - Voice
-  (Date/Time defaults to now + 1 minute)
+Call Initiated (status: "in_progress")
+        |
+        +---> Home Page: useCallHistory("in_progress")
+        |       --> Matches filter, shows in Active list with green indicator
+        |
+        +---> History Page: useCallHistory(undefined)
+                --> Excluded by .not() clause, does NOT appear
+
+...Twilio callback received...
+
+Call Finalized (status: "completed" / "missed" / "voicemail")
+        |
+        +---> Home Page: useCallHistory("in_progress")
+        |       --> No longer matches, removed from Active list
+        |
+        +---> History Page: useCallHistory(undefined)
+                --> Now included, appears in History
 ```
 
----
-
-## Summary of File Changes
+## File Changes
 
 | File | Change |
 |------|--------|
-| `src/components/reminders/CreateReminderDialog.tsx` | Add `initialData` prop, useEffect to populate form |
-| `src/components/history/CallHistoryDetailDialog.tsx` | Add `onDuplicate` prop, add "Duplicate" button |
-| `src/pages/History.tsx` | Add state for create dialog, pass `onDuplicate` handler |
+| `src/hooks/useCallHistory.ts` | Add exclusion logic for in_progress/pending when filter is undefined |
 
+## Verification
+
+After the fix:
+- Active calls on Home page will continue to show the green pulsing indicator for in-progress calls
+- History page "All" filter will only show completed, missed, voicemail, and failed calls
+- History page specific filters (Answered, Missed, etc.) will continue to work unchanged
