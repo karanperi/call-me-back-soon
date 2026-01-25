@@ -206,7 +206,7 @@ export const CreateReminderDialog = ({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0">
-        <DialogHeader className="sticky top-0 bg-card z-10 px-4 py-3 border-b border-border">
+        <DialogHeader className="sticky top-0 bg-card z-10 px-4 pt-4 pb-3 border-b border-border safe-area-top">
           <div className="flex items-center justify-between">
             <button
               onClick={() => onOpenChange(false)}
@@ -266,7 +266,7 @@ export const CreateReminderDialog = ({
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Schedule
             </p>
-            <div className="flex gap-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <div className="flex-1 space-y-2">
                 <Label>Date</Label>
                 <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
@@ -297,7 +297,7 @@ export const CreateReminderDialog = ({
                   </PopoverContent>
                 </Popover>
               </div>
-              <div className="w-28 space-y-2">
+              <div className="w-full sm:w-32 space-y-2">
                 <Label htmlFor="time">Time</Label>
                 <Input
                   id="time"
