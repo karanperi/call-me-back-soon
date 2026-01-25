@@ -238,20 +238,14 @@ export const CreateReminderDialog = ({
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0">
         <DialogHeader className="sticky top-0 bg-card z-10 px-4 pt-4 pb-3 border-b border-border safe-area-top">
           <div className="flex items-center justify-between">
-            <button
-              onClick={() => onOpenChange(false)}
-              className="p-1 hover:bg-secondary rounded-full transition-colors"
-            >
-              <X className="h-5 w-5 text-muted-foreground" />
-            </button>
             <DialogTitle className="text-lg font-semibold">
-              Create New Reminder
+              New Reminder
             </DialogTitle>
             <button
               onClick={() => onOpenChange(false)}
-              className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="p-2 -mr-2 hover:bg-secondary rounded-full transition-colors"
             >
-              Cancel
+              <X className="h-5 w-5 text-muted-foreground" />
             </button>
           </div>
         </DialogHeader>
