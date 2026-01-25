@@ -1,360 +1,147 @@
 
-# Templates Feature: Medication Reminder
 
-## Overview
+# Redesign TemplatePicker to Pill-Shaped Design
 
-Add a Notion-style template picker to the reminder creation flow, introducing a "Medication Reminder" template alongside the existing "Quick Reminder" form. The template picker will appear as a horizontal scrollable row of cards at the top of the Create Reminder dialog.
+## Current Issue
+
+The current template picker uses card-style buttons with:
+- Vertical layout (icon on top, label below)
+- Large minimum width (`min-w-[100px]`)
+- Generous padding (`p-3`)
+- Takes up significant vertical space (~80px height)
+
+## Solution: Compact Pill-Shaped Design
+
+Transform to Notion-style horizontal pills that are space-efficient with edge fade effects for partially visible items.
 
 ---
 
-## Component Architecture
+## Visual Comparison
 
-```text
-CreateReminderDialog
-   |
-   +-- TemplatePicker (NEW - horizontal scrollable cards)
-   |     +-- TemplateCard (Quick) [default selected]
-   |     +-- TemplateCard (Medication)
-   |     +-- TemplateCard (More Soon - disabled)
-   |
-   +-- [Conditional Form Rendering]
-         |
-         +-- QuickReminderForm (existing form, refactored)
-         |     +-- Recipient Details (Name + Phone)
-         |     +-- Schedule (Date, Time, Timezone, Frequency)
-         |     +-- Message (Textarea)
-         |     +-- Voice Selection
-         |
-         +-- MedicationReminderForm (NEW)
-               +-- Recipient Details (Name + Phone)
-               +-- Medication Details
-               |     +-- Medication Name (required)
-               |     +-- Dosage (optional)
-               |     +-- Instructions Picker (dropdown)
-               +-- Schedule
-               |     +-- TimePresetPicker (Morning/Afternoon/Evening/Bedtime/Custom)
-               |     +-- RepeatPicker (Daily/Twice daily/Three times daily/Weekly/Once)
-               +-- Message Preview (auto-generated + editable)
-               +-- Voice Selection
+**Before (Current):**
+```
+┌─────────────────────────────────────────────────────────┐
+│ TEMPLATE                                                │
+│ ┌────────────┐ ┌────────────┐ ┌────────────┐            │
+│ │    ✏️      │ │    💊      │ │    ➕      │            │
+│ │   Quick    │ │ Medication │ │ More Soon  │            │
+│ └────────────┘ └────────────┘ └────────────┘            │
+└─────────────────────────────────────────────────────────┘
+```
+
+**After (Pill Design):**
+```
+┌─────────────────────────────────────────────────────────┐
+│ TEMPLATE                                                │
+│ ░░ [✏️ Quick] [💊 Medication] [➕ More Soon] ░░         │
+│    ↑ fade                               fade ↑          │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## New Files to Create
+## Technical Implementation
 
-| File | Purpose |
-|------|---------|
-| `src/components/reminders/TemplatePicker.tsx` | Horizontal scrollable template selector with cards |
-| `src/components/reminders/MedicationReminderForm.tsx` | Complete medication-specific form |
-| `src/components/reminders/MessagePreview.tsx` | Auto-generated message display with edit functionality |
-| `src/lib/medicationUtils.ts` | Message generation logic and instruction options |
+### 1. Pill Button Styling
 
----
+Change from vertical cards to horizontal pills:
 
-## Files to Modify
+```tsx
+// Before: Vertical card
+"flex flex-col items-center justify-center min-w-[100px] p-3 rounded-xl border-2"
 
-| File | Changes |
-|------|---------|
-| `src/components/reminders/CreateReminderDialog.tsx` | Add TemplatePicker, conditional form rendering based on selected template |
-| `src/hooks/useReminders.ts` | Add `useCreateMultipleReminders` hook for "Twice daily" / "Three times daily" |
-
----
-
-## Detailed Implementation
-
-### 1. TemplatePicker Component
-
-A horizontal scrollable row styled like Notion's template chips:
-
-```typescript
-// Types
-type TemplateType = "quick" | "medication" | "more";
-
-interface Template {
-  id: TemplateType;
-  icon: string;   // Emoji or Lucide icon
-  label: string;
-  disabled?: boolean;
-}
-
-const TEMPLATES: Template[] = [
-  { id: "quick", icon: "Pencil", label: "Quick" },
-  { id: "medication", icon: "Pill", label: "Medication" },
-  { id: "more", icon: "Plus", label: "More Soon", disabled: true },
-];
+// After: Horizontal pill
+"flex items-center gap-1.5 px-3 py-1.5 rounded-full border whitespace-nowrap"
 ```
 
-UI Characteristics:
-- Horizontal scroll with `overflow-x-auto` and `scrollbar-hide`
-- Each card: ~80px width, icon above label, rounded corners
-- Selected state: primary border + light primary background
-- Disabled state: opacity-50, cursor-not-allowed
-- Smooth transition when switching templates
+- **Layout**: `flex items-center gap-1.5` (icon and label side by side)
+- **Padding**: `px-3 py-1.5` (compact horizontal padding)
+- **Shape**: `rounded-full` (pill/capsule shape)
+- **Border**: `border` instead of `border-2` (thinner, more subtle)
+- **No wrap**: `whitespace-nowrap` (prevent text wrapping)
 
-### 2. MedicationReminderForm Component
+### 2. Icon Sizing
 
-A specialized form with structured inputs:
+Reduce icon size for compact pills:
 
-**Recipient Section** (reuses existing patterns):
-- Recipient Name input with Contact Picker icon
-- InternationalPhoneInput component
+```tsx
+// Before
+<Pencil className="h-5 w-5" />
 
-**Medication Details Section**:
-- Medication Name (text input, required, max 100 chars)
-- Dosage (text input, optional, max 50 chars)
-- Instructions dropdown with options:
-  | Key | Label | Text in Message |
-  |-----|-------|-----------------|
-  | none | None | (nothing added) |
-  | with_food | With food | "Take with food." |
-  | with_water | With water | "Take with a full glass of water." |
-  | before_meal | Before meal | "Take before your meal." |
-  | after_meal | After meal | "Take after your meal." |
-  | empty_stomach | On empty stomach | "Take on an empty stomach." |
-  | before_bed | Before bed | "Take before going to bed." |
+// After
+<Pencil className="h-4 w-4" />
+```
 
-**Schedule Section**:
-- "When" dropdown (preset times):
-  | Option | Time |
-  |--------|------|
-  | Morning | 9:00 AM |
-  | Afternoon | 2:00 PM |
-  | Evening | 6:00 PM |
-  | Bedtime | 9:00 PM |
-  | Custom | Opens time picker |
+### 3. Fade Effect Container
 
-- "Repeat" dropdown:
-  | Option | Behavior |
-  |--------|----------|
-  | Daily | Single daily reminder |
-  | Twice daily | Creates 2 reminders (9 AM + 6 PM) |
-  | Three times daily | Creates 3 reminders (9 AM + 2 PM + 6 PM) |
-  | Weekly | Once per week |
-  | Just once | One-time reminder |
+Wrap the scrollable area with a container that applies gradient fade masks on both edges:
 
-  Note: "Twice daily" and "Three times daily" hide the "When" selector and show info text about the preset times.
-
-**Message Preview Section**:
-- Shows auto-generated message in a styled card (bg-secondary/30)
-- Updates in real-time as form fields change
-- "Edit" button transforms preview to editable textarea
-- "Reset to auto" link reverts to auto-generated message
-- Once manually edited, auto-generation stops until reset
-
-**Voice Section**:
-- Reuses existing voice selection UI (two cards: Friendly Female / Friendly Male)
-
-### 3. Message Generation Logic
-
-```typescript
-// src/lib/medicationUtils.ts
-
-export function generateMedicationMessage(
-  recipientName: string,
-  medicationName: string,
-  dosage: string | undefined,
-  instruction: InstructionKey
-): string {
-  let message = `Hello ${recipientName}. This is your medication reminder. It's time to take your ${medicationName}`;
+```tsx
+<div className="relative">
+  {/* Left fade */}
+  <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-card to-transparent z-10 pointer-events-none" />
   
-  if (dosage?.trim()) {
-    message += ` - ${dosage.trim()}`;
-  }
+  {/* Scrollable pills */}
+  <div className="flex gap-2 overflow-x-auto px-6 ...">
+    {/* pills */}
+  </div>
   
-  message += '.';
-  
-  if (instruction !== 'none') {
-    message += ` ${INSTRUCTION_TEXTS[instruction]}`;
-  }
-  
-  message += ' Take care!';
-  
-  return message;
-}
+  {/* Right fade */}
+  <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-card to-transparent z-10 pointer-events-none" />
+</div>
 ```
 
-### 4. Multiple Reminder Creation
+The fade uses `from-card` to match the dialog background color.
 
-For "Twice daily" and "Three times daily" options, create multiple separate reminder records:
+### 4. Selected State
 
-```typescript
-// useReminders.ts - new hook
-export const useCreateMultipleReminders = () => {
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
+Update selected styling for pills:
 
-  return useMutation({
-    mutationFn: async (reminders: Omit<ReminderInsert, "user_id">[]) => {
-      if (!user) throw new Error("User not authenticated");
+```tsx
+// Selected
+"border-primary bg-primary/10 text-primary"
 
-      const { data, error } = await supabase
-        .from("reminders")
-        .insert(reminders.map(r => ({ ...r, user_id: user.id })))
-        .select();
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["reminders"] });
-    },
-  });
-};
-```
-
-Schedule logic:
-- Twice daily: 9:00 AM + 6:00 PM (same date, daily frequency)
-- Three times daily: 9:00 AM + 2:00 PM + 6:00 PM (same date, daily frequency)
-
-### 5. CreateReminderDialog Updates
-
-```typescript
-// Add template state
-const [selectedTemplate, setSelectedTemplate] = useState<"quick" | "medication">("quick");
-
-// In JSX, add TemplatePicker after DialogHeader
-<TemplatePicker 
-  selected={selectedTemplate}
-  onSelect={setSelectedTemplate}
-/>
-
-// Conditional form rendering
-{selectedTemplate === "quick" ? (
-  // Existing form code (unchanged)
-) : (
-  <MedicationReminderForm
-    onSubmit={handleMedicationSubmit}
-    isPending={createReminder.isPending || createMultiple.isPending}
-  />
-)}
+// Unselected
+"border-border bg-secondary/50 hover:border-primary/50 text-muted-foreground"
 ```
 
 ---
 
-## UI Design Details
+## File Changes
 
-### Template Cards
+### `src/components/reminders/TemplatePicker.tsx`
 
-```
-Mobile Width: Full width horizontal scroll
-Card Size: min-w-[100px] p-3
-Border Radius: rounded-xl
-Selected: border-2 border-primary bg-primary/5
-Unselected: border border-border
-Disabled: opacity-50 pointer-events-none
-Icon Size: h-5 w-5 or text-xl for emoji
-Label: text-sm font-medium
-```
-
-### Visual Styling
-
-Template Picker section:
-```css
-.template-picker {
-  /* Horizontal scroll without visible scrollbar */
-  overflow-x: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-}
-.template-picker::-webkit-scrollbar {
-  display: none;
-}
-```
-
-Message Preview card:
-```css
-.message-preview {
-  background: var(--secondary) / 0.3;
-  border-radius: 0.75rem;
-  padding: 1rem;
-  font-size: 0.875rem;
-  line-height: 1.5;
-}
-```
+| Change | Details |
+|--------|---------|
+| Icon size | Reduce from `h-5 w-5` to `h-4 w-4` |
+| Button layout | Change from `flex-col` to horizontal `flex items-center gap-1.5` |
+| Button shape | Change from `rounded-xl` to `rounded-full` |
+| Padding | Change from `p-3` to `px-3 py-1.5` |
+| Remove min-width | Remove `min-w-[100px]` |
+| Add fade container | Wrap scroll area with gradient fade overlays |
+| Add horizontal padding | `px-6` on scroll container to allow space for fade |
+| Update selected state | Use filled pill style with primary color |
 
 ---
 
-## Form Validation Rules
+## Complete Updated Component
 
-| Field | Validation |
-|-------|------------|
-| Recipient Name | Required, 2-100 characters |
-| Phone Number | Required, valid E.164 format |
-| Medication Name | Required, 1-100 characters |
-| Dosage | Optional, max 50 characters |
-| Instructions | Optional (defaults to "None") |
-| When | Required (unless Twice/Three times daily) |
-| Repeat | Required |
-| Voice | Required |
-
-Error Messages:
-- "Please enter the medication name"
-- "Please select when to send the reminder" (for daily/weekly/once options)
-- Standard validation messages for name/phone
+The updated component will:
+1. Use compact horizontal pills with icon + label inline
+2. Have subtle gradient fades on left and right edges
+3. Support horizontal scrolling with hidden scrollbar
+4. Maintain touch-friendly tap targets (adequate padding)
+5. Show clear selected state with primary color fill
 
 ---
 
-## Success Flow
+## Space Savings
 
-1. User fills out medication form
-2. Clicks "Create Reminder"
-3. Backend creates 1-3 reminder records (based on frequency)
-4. Dialog closes
-5. Success toast appears:
-   - Single: "Medication reminder created"
-   - Multiple: "2 medication reminders created" or "3 medication reminders created"
-6. Home screen refreshes with new reminder(s)
+| Metric | Before | After |
+|--------|--------|-------|
+| Button height | ~70px | ~32px |
+| Total section height | ~100px | ~60px |
+| Horizontal footprint | ~340px | ~280px |
 
----
+**Result**: ~40% reduction in vertical space used by the template picker.
 
-## Database Considerations
-
-No schema changes required. The existing `reminders` table supports all needed fields:
-- `message`: Auto-generated or user-edited message
-- `scheduled_at`: Scheduled time
-- `frequency`: "daily", "weekly", or "once"
-- `voice`: Selected voice
-
-Optional future enhancement: Add `template_type` column for analytics tracking.
-
----
-
-## Technical Notes
-
-1. **Template State**: Selected template is reset when dialog closes to default ("quick")
-
-2. **Form State Isolation**: Quick and Medication forms maintain separate state - switching templates doesn't carry over values
-
-3. **Reusable Components**: Voice selection UI can be extracted to a shared `VoiceSelector` component for DRY code
-
-4. **Mobile UX**: 
-   - Template cards are touch-friendly with adequate tap targets
-   - Horizontal scroll works smoothly on mobile
-   - Form sections maintain existing safe-area and responsive patterns
-
-5. **Icons**: Use Lucide icons (Pencil for Quick, Pill for Medication, Plus for More Soon)
-
----
-
-## File Structure After Implementation
-
-```
-src/components/reminders/
-  +-- CreateReminderDialog.tsx (modified)
-  +-- EditReminderDialog.tsx (unchanged)
-  +-- TemplatePicker.tsx (new)
-  +-- MedicationReminderForm.tsx (new)
-  +-- MessagePreview.tsx (new)
-  +-- FrequencyPicker.tsx (unchanged)
-  +-- CustomFrequencyDialog.tsx (unchanged)
-  +-- TestCallConfirmation.tsx (unchanged)
-
-src/lib/
-  +-- medicationUtils.ts (new)
-  +-- recurrenceUtils.ts (unchanged)
-  +-- ...
-
-src/hooks/
-  +-- useReminders.ts (modified - add useCreateMultipleReminders)
-  +-- ...
-```
