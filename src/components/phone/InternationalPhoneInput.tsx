@@ -76,6 +76,8 @@ export const InternationalPhoneInput = ({
             setLocalNumber(parsed.nationalNumber);
             const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
             setIsValid(validation.isValid);
+            // Clear any previous validation errors when selecting a valid contact
+            setValidationError(validation.isValid ? undefined : validation.error);
           }
         }
       }
