@@ -2,17 +2,27 @@ import { useState } from "react";
 import { Settings, Search, Clock, ChevronRight, AlertCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
-import { useCallHistory } from "@/hooks/useCallHistory";
-import { format, formatDistanceToNow } from "date-fns";
+import { useCallHistory, CallHistory } from "@/hooks/useCallHistory";
+import { formatDistanceToNow } from "date-fns";
 import { CallHistoryDetailDialog } from "@/components/history/CallHistoryDetailDialog";
-import { Tables } from "@/integrations/supabase/types";
-
-type CallHistory = Tables<"call_history">;
+import { CreateReminderDialog, InitialReminderData } from "@/components/reminders/CreateReminderDialog";
 type Filter = "all" | "completed" | "missed" | "voicemail" | "failed";
 
 const History = () => {
   const [filter, setFilter] = useState<Filter>("all");
   const [selectedCall, setSelectedCall] = useState<CallHistory | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [duplicateData, setDuplicateData] = useState<InitialReminderData | undefined>();
+
+  const handleDuplicate = (call: CallHistory) => {
+    setDuplicateData({
+      recipientName: call.recipient_name,
+      phoneNumber: call.phone_number,
+      message: call.message,
+      voice: call.voice as "friendly_female" | "friendly_male",
+    });
+    setCreateDialogOpen(true);
+  };
   
   const filterParam = filter === "all" ? undefined : filter;
   const { data: history = [], isLoading } = useCallHistory(filterParam);
@@ -189,6 +199,14 @@ const History = () => {
         open={!!selectedCall}
         onOpenChange={(open) => !open && setSelectedCall(null)}
         callHistory={selectedCall}
+        onDuplicate={handleDuplicate}
+      />
+
+      {/* Create Reminder Dialog (for duplicates) */}
+      <CreateReminderDialog
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        initialData={duplicateData}
       />
     </div>
   );

@@ -32,9 +32,17 @@ import { toast } from "@/hooks/use-toast";
 import { useCreateReminder } from "@/hooks/useReminders";
 import { TIMEZONES, getDefaultTimezone } from "@/lib/timezones";
 
+export interface InitialReminderData {
+  recipientName?: string;
+  phoneNumber?: string;
+  message?: string;
+  voice?: "friendly_female" | "friendly_male";
+}
+
 interface CreateReminderDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialData?: InitialReminderData;
 }
 
 type Frequency = "once" | "daily" | "weekly";
@@ -43,6 +51,7 @@ type Voice = "friendly_female" | "friendly_male";
 export const CreateReminderDialog = ({
   open,
   onOpenChange,
+  initialData,
 }: CreateReminderDialogProps) => {
   const getDefaultDateTime = useCallback((tz: string) => {
     const now = new Date();
@@ -86,6 +95,19 @@ export const CreateReminderDialog = ({
     }
     setTimezone(newTimezone);
   };
+
+  // Populate form with initial data when dialog opens (for duplicate feature)
+  useEffect(() => {
+    if (initialData && open) {
+      if (initialData.recipientName) setRecipientName(initialData.recipientName);
+      if (initialData.phoneNumber) {
+        setPhoneNumber(initialData.phoneNumber);
+        setIsPhoneValid(true); // Trust existing E.164 format
+      }
+      if (initialData.message) setMessage(initialData.message);
+      if (initialData.voice) setVoice(initialData.voice);
+    }
+  }, [initialData, open]);
 
   const createReminder = useCreateReminder();
 
