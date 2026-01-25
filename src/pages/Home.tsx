@@ -8,6 +8,7 @@ import { useReminders, useUpdateReminder, Reminder } from "@/hooks/useReminders"
 import { EditReminderDialog } from "@/components/reminders/EditReminderDialog";
 import { useCallHistory } from "@/hooks/useCallHistory";
 import { format } from "date-fns";
+import { generateMessageSummary } from "@/lib/summaryUtils";
 
 type Tab = "active" | "upcoming";
 
@@ -140,9 +141,14 @@ const Home = () => {
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-foreground truncate">
-                      {reminder.recipient_name}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-foreground truncate">
+                        {reminder.recipient_name}
+                      </p>
+                      <span className="text-xs text-muted-foreground/70 truncate">
+                        {generateMessageSummary(reminder.message)}
+                      </span>
+                    </div>
                     <p className="text-sm text-muted-foreground">
                       {isCallInProgress(reminder.id) ? (
                         <span className="text-green-500 font-medium">Call in progress...</span>
