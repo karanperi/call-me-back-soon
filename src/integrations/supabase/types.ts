@@ -27,6 +27,7 @@ export type Database = {
           recipient_name: string
           reminder_id: string | null
           status: string
+          twilio_call_sid: string | null
           user_id: string
           voice: string
         }
@@ -42,6 +43,7 @@ export type Database = {
           recipient_name: string
           reminder_id?: string | null
           status: string
+          twilio_call_sid?: string | null
           user_id: string
           voice: string
         }
@@ -57,6 +59,7 @@ export type Database = {
           recipient_name?: string
           reminder_id?: string | null
           status?: string
+          twilio_call_sid?: string | null
           user_id?: string
           voice?: string
         }

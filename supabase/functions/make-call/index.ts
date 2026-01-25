@@ -124,7 +124,7 @@ serve(async (req) => {
         voice: voice,
         status: "pending",
         attempted_at: new Date().toISOString(),
-      } as any)
+      } as never)
       .select('id')
       .single();
 
@@ -132,19 +132,22 @@ serve(async (req) => {
       console.error("Error creating call history:", historyCreateError);
       // Continue anyway - don't fail the call just because history failed
     } else if (historyData) {
-      callHistoryId = (historyData as any).id;
+      callHistoryId = (historyData as { id: string }).id;
     }
 
-    // Helper function to update history status
-    const updateHistoryStatus = async (status: string, errorMessage?: string) => {
+    // Helper function to update history status and optionally store twilio_call_sid
+    const updateHistoryStatus = async (status: string, errorMessage?: string, twilioCallSid?: string) => {
       if (callHistoryId && supabase) {
-        // deno-lint-ignore no-explicit-any
-        await (supabase as any)
+        const updateData: Record<string, unknown> = { 
+          status, 
+          error_message: errorMessage || null 
+        };
+        if (twilioCallSid) {
+          updateData.twilio_call_sid = twilioCallSid;
+        }
+        await supabase
           .from("call_history")
-          .update({ 
-            status, 
-            error_message: errorMessage || null 
-          })
+          .update(updateData as never)
           .eq("id", callHistoryId);
       }
     };
@@ -287,10 +290,18 @@ serve(async (req) => {
       </Response>
     `;
 
+    // Build callback URL for Twilio to notify us of the actual call outcome
+    const statusCallbackUrl = `${SUPABASE_URL}/functions/v1/twilio-status-callback`;
+
     const twilioParams = new URLSearchParams({
       To: phoneNumber,
       From: TWILIO_PHONE_NUMBER,
       Twiml: twiml.trim(),
+      StatusCallback: statusCallbackUrl,
+      StatusCallbackEvent: "completed",
+      // Enable Answering Machine Detection for voicemail detection
+      MachineDetection: "Enable",
+      MachineDetectionTimeout: "5",
     });
 
     const twilioResponse = await fetch(twilioUrl, {
@@ -315,10 +326,14 @@ serve(async (req) => {
     }
 
     // ============================================================
-    // STEP 5: Update history to completed
+    // STEP 5: Store Twilio Call SID - status remains "in_progress"
+    // The actual outcome will be updated by the twilio-status-callback webhook
     // ============================================================
-    console.log(`Call initiated. Call SID: ${twilioResult.sid}`);
-    await updateHistoryStatus("completed");
+    console.log(`Call initiated. Call SID: ${twilioResult.sid}. Awaiting callback for final status.`);
+    
+    // Update history with the Twilio Call SID so the callback can find it
+    // Status stays "in_progress" until the callback updates it
+    await updateHistoryStatus("in_progress", undefined, twilioResult.sid);
 
     return new Response(
       JSON.stringify({
