@@ -1,1 +1,7 @@
 project_id = "csenulbdattrynafibqw"
+
+[functions.make-call]
+verify_jwt = false
+
+[functions.check-reminders]
+verify_jwt = false
