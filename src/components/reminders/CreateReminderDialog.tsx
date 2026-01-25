@@ -50,6 +50,7 @@ export const CreateReminderDialog = ({
   const [frequency, setFrequency] = useState<Frequency>("once");
   const [voice, setVoice] = useState<Voice>("friendly_female");
   const [timezone, setTimezone] = useState(getDefaultTimezone());
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const createReminder = useCreateReminder();
 
@@ -186,7 +187,7 @@ export const CreateReminderDialog = ({
             <div className="flex gap-3">
               <div className="flex-1 space-y-2">
                 <Label>Date</Label>
-                <Popover>
+                <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
@@ -203,7 +204,10 @@ export const CreateReminderDialog = ({
                     <Calendar
                       mode="single"
                       selected={date}
-                      onSelect={setDate}
+                      onSelect={(selectedDate) => {
+                        setDate(selectedDate);
+                        setDatePickerOpen(false);
+                      }}
                       disabled={(d) => d < today}
                       initialFocus
                       className="pointer-events-auto"
