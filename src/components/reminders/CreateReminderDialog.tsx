@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/select";
 import { CalendarIcon, X, Globe } from "lucide-react";
 import { ContactPickerIcon } from "@/components/contacts/ContactPickerIcon";
+import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { useState, useEffect, useCallback } from "react";
 import { format, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -57,7 +58,8 @@ export const CreateReminderDialog = ({
   const defaultDateTime = getDefaultDateTime(defaultTz);
 
   const [recipientName, setRecipientName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("+44 ");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [isPhoneValid, setIsPhoneValid] = useState(false);
   const [message, setMessage] = useState("");
   const [date, setDate] = useState<Date | undefined>(defaultDateTime.date);
   const [time, setTime] = useState(defaultDateTime.time);
@@ -87,6 +89,11 @@ export const CreateReminderDialog = ({
 
   const createReminder = useCreateReminder();
 
+  const handlePhoneChange = (e164Value: string, isValid: boolean) => {
+    setPhoneNumber(e164Value);
+    setIsPhoneValid(isValid);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -96,9 +103,8 @@ export const CreateReminderDialog = ({
       return;
     }
     
-    const phoneRegex = /^(\+44|0)\s?7\d{3}\s?\d{6}$/;
-    if (!phoneRegex.test(phoneNumber.replace(/\s/g, ""))) {
-      toast({ title: "Please enter a valid UK phone number", variant: "destructive" });
+    if (!isPhoneValid || !phoneNumber) {
+      toast({ title: "Please enter a valid phone number", variant: "destructive" });
       return;
     }
     
@@ -128,7 +134,7 @@ export const CreateReminderDialog = ({
     try {
       await createReminder.mutateAsync({
         recipient_name: recipientName.trim(),
-        phone_number: phoneNumber.replace(/\s/g, ""),
+        phone_number: phoneNumber, // Already in E.164 format
         message: message.trim(),
         scheduled_at: scheduledAt.toISOString(),
         frequency,
@@ -151,7 +157,8 @@ export const CreateReminderDialog = ({
     const newTz = getDefaultTimezone();
     const newDefaults = getDefaultDateTime(newTz);
     setRecipientName("");
-    setPhoneNumber("+44 ");
+    setPhoneNumber("");
+    setIsPhoneValid(false);
     setMessage("");
     setDate(newDefaults.date);
     setTime(newDefaults.time);
@@ -213,16 +220,13 @@ export const CreateReminderDialog = ({
                 </div>
               </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="phoneNumber">Phone Number</Label>
-              <Input
-                id="phoneNumber"
-                type="tel"
-                placeholder="+44 7700 000000"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-              />
-            </div>
+            <InternationalPhoneInput
+              id="phoneNumber"
+              value={phoneNumber}
+              onChange={handlePhoneChange}
+              label="Phone Number"
+              showCostEstimate={true}
+            />
           </div>
 
           {/* Schedule */}

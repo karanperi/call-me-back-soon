@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useContacts, Contact } from "@/hooks/useContacts";
 import { EmptyContactsState } from "./EmptyContactsState";
 import { ContactForm } from "./ContactForm";
+import { formatPhoneForDisplay } from "@/lib/phoneUtils";
 
 interface ContactPickerModalProps {
   open: boolean;
@@ -73,7 +74,7 @@ export const ContactPickerModal = ({ open, onOpenChange, onSelect }: ContactPick
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="font-medium text-foreground truncate">{contact.name}</p>
-                      <p className="text-sm text-muted-foreground">{contact.phone_number}</p>
+                      <p className="text-sm text-muted-foreground">{formatPhoneForDisplay(contact.phone_number)}</p>
                     </div>
                   </button>
                 ))}
