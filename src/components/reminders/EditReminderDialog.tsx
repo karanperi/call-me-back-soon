@@ -24,13 +24,22 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { CalendarIcon, X, Trash2, Phone, Loader2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CalendarIcon, X, Trash2, Phone, Loader2, Globe } from "lucide-react";
 import { useState, useEffect } from "react";
-import { format, setHours, setMinutes } from "date-fns";
+import { format } from "date-fns";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useUpdateReminder, useDeleteReminder, Reminder } from "@/hooks/useReminders";
 import { useMakeCall } from "@/hooks/useMakeCall";
+import { TIMEZONES, getDefaultTimezone } from "@/lib/timezones";
 
 interface EditReminderDialogProps {
   open: boolean;
@@ -53,6 +62,7 @@ export const EditReminderDialog = ({
   const [time, setTime] = useState("09:00");
   const [frequency, setFrequency] = useState<Frequency>("once");
   const [voice, setVoice] = useState<Voice>("friendly_female");
+  const [timezone, setTimezone] = useState(getDefaultTimezone());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const updateReminder = useUpdateReminder();
@@ -65,9 +75,16 @@ export const EditReminderDialog = ({
       setRecipientName(reminder.recipient_name);
       setPhoneNumber(reminder.phone_number);
       setMessage(reminder.message);
+      
+      // Convert UTC to local timezone for display
+      const userTimezone = getDefaultTimezone();
+      setTimezone(userTimezone);
+      
       const scheduledDate = new Date(reminder.scheduled_at);
-      setDate(scheduledDate);
-      setTime(format(scheduledDate, "HH:mm"));
+      const zonedDate = toZonedTime(scheduledDate, userTimezone);
+      setDate(zonedDate);
+      setTime(format(zonedDate, "HH:mm"));
+      
       setFrequency(reminder.frequency as Frequency);
       setVoice(reminder.voice as Voice);
     }
@@ -100,9 +117,13 @@ export const EditReminderDialog = ({
       return;
     }
 
-    // Combine date and time
+    // Combine date and time in the selected timezone, then convert to UTC
     const [hours, minutes] = time.split(":").map(Number);
-    const scheduledAt = setMinutes(setHours(date, hours), minutes);
+    const localDateTime = new Date(date);
+    localDateTime.setHours(hours, minutes, 0, 0);
+    
+    // Convert from selected timezone to UTC
+    const scheduledAt = fromZonedTime(localDateTime, timezone);
 
     if (scheduledAt <= new Date()) {
       toast({ title: "Scheduled time must be in the future", variant: "destructive" });
@@ -170,6 +191,10 @@ export const EditReminderDialog = ({
   };
 
   if (!reminder) return null;
+
+  // Get start of today for calendar minimum date
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   return (
     <>
@@ -248,7 +273,7 @@ export const EditReminderDialog = ({
                         mode="single"
                         selected={date}
                         onSelect={setDate}
-                        disabled={(date) => date < new Date()}
+                        disabled={(d) => d < today}
                         initialFocus
                         className="pointer-events-auto"
                       />
@@ -265,6 +290,27 @@ export const EditReminderDialog = ({
                   />
                 </div>
               </div>
+
+              {/* Timezone Selection */}
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1.5">
+                  <Globe className="h-3.5 w-3.5" />
+                  Timezone
+                </Label>
+                <Select value={timezone} onValueChange={setTimezone}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select timezone" />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60 bg-popover">
+                    {TIMEZONES.map((tz) => (
+                      <SelectItem key={tz.value} value={tz.value}>
+                        {tz.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label>Frequency</Label>
                 <div className="flex gap-2">
