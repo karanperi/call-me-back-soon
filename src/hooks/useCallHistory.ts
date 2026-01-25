@@ -22,7 +22,12 @@ export const useCallHistory = (filter?: "completed" | "missed" | "voicemail" | "
         .order("attempted_at", { ascending: false });
 
       if (filter) {
+        // Specific filter requested - return only that status
         query = query.eq("status", filter);
+      } else {
+        // "All" filter - exclude in-progress and pending calls
+        // These should only appear in the Active calls list on Home page
+        query = query.not("status", "in", "(in_progress,pending)");
       }
 
       const { data, error } = await query;
