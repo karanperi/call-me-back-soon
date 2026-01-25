@@ -1,145 +1,94 @@
 
 
-# Yaad - Voice Call Reminder App
-## Implementation Plan
+# Fix Plan: Cron Job Authentication for check-reminders
 
-### Overview
-A mobile-first PWA that lets users schedule automated voice call reminders. The app features a polished iOS-inspired design with blue/white color scheme, bottom tab navigation, and card-based UI components.
+## Problem Identified
 
----
+The scheduled reminder processing is failing because the cron job is using the wrong authentication token. After the recent security hardening, the `check-reminders` edge function rejects requests that don't have proper service-level authentication.
 
-## Phase 1: Foundation & Design System
+**Root Cause:** The cron job is sending the **anon key** (public key) but the function now requires:
+- The service role key in Authorization header, OR  
+- A valid CRON_SECRET in the X-Cron-Secret header
 
-**Setup the visual foundation:**
-- Configure the design system with primary blue (#3B82F6), success green, error red, and warning amber colors
-- Set up Inter font or system sans-serif
-- Create reusable styled components matching iOS design language (rounded cards, subtle shadows)
-- Configure PWA with vite-plugin-pwa, app manifest, and mobile meta tags
-- Create app icon and splash screen assets
+## Solution Overview
 
----
+Update the cron job to use proper authentication by adding a CRON_SECRET header.
 
-## Phase 2: Navigation & Layout
+## Implementation Steps
 
-**Build the app shell:**
-- Create bottom tab navigation with 4 tabs: Home, History, Voices, Profile
-- Add the blue floating action button (+) centered above tabs
-- Set up React Router for navigation between screens
-- Create page layout wrapper with consistent header styling
-- Add mobile viewport handling and safe area padding
+### Step 1: Add CRON_SECRET to Backend Secrets
 
----
+A new secret `CRON_SECRET` will be added. The system will prompt you to enter a secure random value (e.g., a long random string like a UUID or password).
 
-## Phase 3: Authentication
+### Step 2: Update the Cron Job
 
-**Implement user auth with Lovable Cloud:**
-- Create Welcome/Landing screen with logo, tagline, and sign up/login buttons
-- Build Sign Up screen with email, password, confirm password fields
-- Build Login screen with email and password fields
-- Set up Supabase authentication integration
-- Add protected route handling to redirect unauthenticated users
-- Create user profile on first sign up
+Replace the existing cron job with one that includes the CRON_SECRET header:
 
----
+```sql
+-- Delete the old cron job
+SELECT cron.unschedule('check-due-reminders');
 
-## Phase 4: Database Schema
+-- Create new cron job with proper authentication
+SELECT cron.schedule(
+  'check-due-reminders',
+  '* * * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://csenulbdattrynafibqw.supabase.co/functions/v1/check-reminders',
+    headers := jsonb_build_object(
+      'Content-Type', 'application/json',
+      'X-Cron-Secret', current_setting('app.cron_secret', true)
+    ),
+    body := '{}'::jsonb
+  ) AS request_id;
+  $$
+);
+```
 
-**Set up the database structure:**
-- Create `profiles` table with user preferences and default voice selection
-- Create `reminders` table for storing scheduled reminders
-- Create `call_history` table for tracking call outcomes
-- Configure Row Level Security so users can only access their own data
-- Set up database trigger to auto-create profile on signup
+**Note:** Since Postgres cannot directly access Deno environment variables, we'll use the service role key approach instead (which the function already supports).
 
----
+### Step 3: Alternative - Use Service Role Key
 
-## Phase 5: Home Screen (Reminders Dashboard)
+The simpler fix is to update the cron job to use the service role key:
 
-**Build the main dashboard:**
-- Header with user avatar, title, and settings icon
-- Active/Upcoming tab switcher
-- Reminder cards showing recipient, schedule, and toggle switch
-- Card interactions: toggle to enable/disable, tap to edit
-- Empty state with helpful message and call-to-action
-- Real-time updates from Supabase
+```sql
+-- Delete the old cron job
+SELECT cron.unschedule('check-due-reminders');
 
----
+-- Create new cron job with service role authentication
+SELECT cron.schedule(
+  'check-due-reminders',
+  '* * * * *',
+  $$
+  SELECT net.http_post(
+    url := 'https://csenulbdattrynafibqw.supabase.co/functions/v1/check-reminders',
+    headers := '{"Content-Type": "application/json", "Authorization": "Bearer SERVICE_ROLE_KEY_HERE"}'::jsonb,
+    body := '{}'::jsonb
+  ) AS request_id;
+  $$
+);
+```
 
-## Phase 6: Create Reminder Form
+This requires obtaining and inserting the service role key into the cron job definition.
 
-**Build the reminder creation flow:**
-- Modal/full-screen form with proper header and close button
-- Recipient section: name input and UK phone number with +44 prefix
-- Schedule section: date/time picker and frequency selection (Once/Daily/Weekly)
-- Message section: textarea with 500 character limit and counter
-- Voice selection: two cards for Friendly Female and Friendly Male
-- Form validation matching all specified rules
-- Save to database and return to Home screen
+## Files to Modify
 
----
+1. **Database migration** - Update the cron job with correct authentication headers
 
-## Phase 7: History Screen
+## Expected Outcome
 
-**Build the call activity view:**
-- Header with title and placeholder search icon
-- Filter tabs: All, Answered, Missed, Voicemail
-- Call history cards with status indicators (green/red/yellow dots)
-- Status text showing outcome and timing
-- Empty state for no history
-- Mock data insertion for demo purposes (since actual calling is external)
+After implementation:
+- The cron job will successfully authenticate with the `check-reminders` function
+- Scheduled reminders will be processed as expected
+- Calls will be initiated via Twilio when reminders are due
 
 ---
 
-## Phase 8: Voices Screen
+## Technical Details
 
-**Build the voice gallery:**
-- Currently active voice card with "ACTIVE" badge
-- Voice grid with Friendly Female and Friendly Male options
-- Select voice functionality to set user's default preference
-- Play button placeholders showing "Preview coming soon" toast
-- Filter pills (only "All" functional for MVP)
-
----
-
-## Phase 9: Profile Screen
-
-**Build user settings:**
-- User info card with avatar and email
-- Preferences section: default voice link, country display
-- Account section: change password placeholder, logout functionality
-- About section: help, privacy, terms placeholders
-- App version display
-- Logout confirmation and redirect to Welcome screen
-
----
-
-## Phase 10: Polish & PWA
-
-**Final touches:**
-- Ensure responsive design works on all mobile screen sizes
-- Add loading states and transitions
-- Implement toast notifications for actions
-- Test PWA install flow on mobile browsers
-- Create install instructions page at `/install`
-- Add offline support basics
-- Review and polish all interactions
-
----
-
-## What's Included in MVP
-
-✅ Full authentication flow (signup, login, logout)
-✅ Create, view, toggle, and edit reminders
-✅ View call history (with mock data for demo)
-✅ Select between 2 voices
-✅ Mobile-first PWA that can be installed to home screen
-✅ Polished iOS-inspired UI matching the design spec
-✅ Secure database with proper RLS policies
-
-## What's Deferred (External Integration)
-
-🔲 Actual voice call execution (Twilio)
-🔲 Text-to-speech conversion (ElevenLabs)
-🔲 Voice preview playback
-🔲 Real-time call status updates
+| Component | Current State | Required State |
+|-----------|--------------|----------------|
+| Cron Authorization | Anon key | Service role key |
+| Edge Function Auth | Validates service role OR CRON_SECRET | No change needed |
+| CRON_SECRET | Not configured | Optional (service role is sufficient) |
 
