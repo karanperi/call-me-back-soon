@@ -4,18 +4,25 @@ import { Settings, Bell, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import { useReminders, useUpdateReminder } from "@/hooks/useReminders";
+import { useReminders, useUpdateReminder, Reminder } from "@/hooks/useReminders";
+import { EditReminderDialog } from "@/components/reminders/EditReminderDialog";
 import { format } from "date-fns";
 
 type Tab = "active" | "upcoming";
 
 const Home = () => {
   const [activeTab, setActiveTab] = useState<Tab>("active");
+  const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const { data: reminders = [], isLoading } = useReminders();
   const updateReminder = useUpdateReminder();
 
-  const toggleReminder = (id: string, isActive: boolean) => {
+  const toggleReminder = (e: React.MouseEvent, id: string, isActive: boolean) => {
+    e.stopPropagation(); // Prevent card click when toggling switch
     updateReminder.mutate({ id, is_active: !isActive });
+  };
+
+  const handleCardClick = (reminder: Reminder) => {
+    setEditingReminder(reminder);
   };
 
   const activeReminders = reminders.filter((r) => r.is_active);
@@ -94,7 +101,8 @@ const Home = () => {
               {displayReminders.map((reminder) => (
                 <div
                   key={reminder.id}
-                  className="bg-card rounded-lg p-4 card-shadow border border-border flex items-center gap-4"
+                  onClick={() => handleCardClick(reminder)}
+                  className="bg-card rounded-lg p-4 card-shadow border border-border flex items-center gap-4 cursor-pointer hover:bg-card/80 transition-colors"
                 >
                   {/* Avatar */}
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
@@ -116,7 +124,8 @@ const Home = () => {
                   {/* Toggle */}
                   <Switch
                     checked={reminder.is_active}
-                    onCheckedChange={() => toggleReminder(reminder.id, reminder.is_active)}
+                    onCheckedChange={() => {}}
+                    onClick={(e) => toggleReminder(e, reminder.id, reminder.is_active)}
                     disabled={updateReminder.isPending}
                   />
 
@@ -139,6 +148,13 @@ const Home = () => {
           </div>
         )}
       </div>
+
+      {/* Edit Reminder Dialog */}
+      <EditReminderDialog
+        open={!!editingReminder}
+        onOpenChange={(open) => !open && setEditingReminder(null)}
+        reminder={editingReminder}
+      />
     </div>
   );
 };
