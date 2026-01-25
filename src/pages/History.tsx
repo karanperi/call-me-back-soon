@@ -1,14 +1,18 @@
 import { useState } from "react";
-import { Settings, Search, Clock } from "lucide-react";
+import { Settings, Search, Clock, ChevronRight } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { useCallHistory } from "@/hooks/useCallHistory";
 import { format, formatDistanceToNow } from "date-fns";
+import { CallHistoryDetailDialog } from "@/components/history/CallHistoryDetailDialog";
+import { Tables } from "@/integrations/supabase/types";
 
+type CallHistory = Tables<"call_history">;
 type Filter = "all" | "completed" | "missed" | "voicemail";
 
 const History = () => {
   const [filter, setFilter] = useState<Filter>("all");
+  const [selectedCall, setSelectedCall] = useState<CallHistory | null>(null);
   
   const filterParam = filter === "all" ? undefined : filter;
   const { data: history = [], isLoading } = useCallHistory(filterParam);
@@ -34,7 +38,7 @@ const History = () => {
     }
   };
 
-  const getStatusText = (item: typeof history[0]) => {
+  const getStatusText = (item: CallHistory) => {
     const timeAgo = formatDistanceToNow(new Date(item.attempted_at), { addSuffix: true });
     
     switch (item.status) {
@@ -102,7 +106,8 @@ const History = () => {
               {history.map((item) => (
                 <div
                   key={item.id}
-                  className="bg-card rounded-lg p-4 card-shadow border border-border flex items-center gap-4"
+                  onClick={() => setSelectedCall(item)}
+                  className="bg-card rounded-lg p-4 card-shadow border border-border flex items-center gap-4 cursor-pointer hover:bg-card/80 transition-colors"
                 >
                   {/* Avatar */}
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
@@ -128,6 +133,9 @@ const History = () => {
                       {getStatusText(item)}
                     </p>
                   </div>
+
+                  {/* Chevron */}
+                  <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
                 </div>
               ))}
             </div>
@@ -145,6 +153,13 @@ const History = () => {
           </div>
         )}
       </div>
+
+      {/* Call Detail Dialog */}
+      <CallHistoryDetailDialog
+        open={!!selectedCall}
+        onOpenChange={(open) => !open && setSelectedCall(null)}
+        callHistory={selectedCall}
+      />
     </div>
   );
 };
