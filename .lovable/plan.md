@@ -1,298 +1,173 @@
 
 
-# Enhanced Frequency Feature (Google Calendar Style)
+# Fix: PWA Layout Issues on Chrome for iPhone 13
 
-## Overview
+## Problem Analysis
 
-Transform the simple Once/Daily/Weekly pill buttons into a Google Calendar-inspired recurrence picker with preset options (including weekdays/weekends) and a full custom frequency dialog.
+### Issue 1: Date and Time Box Misalignment
 
----
+**Root Cause:**
+The current layout uses `flex gap-3` with `flex-1` for the date picker and a fixed `w-28` (112px) for the time input. On the iPhone 13's 375px screen in Chrome:
 
-## UI Options Available
+1. **Chrome iOS renders `<input type="time">` differently** - Chrome on iOS uses a custom time picker UI that has different intrinsic sizing compared to Safari
+2. **Fixed width constraint** - The `w-28` creates a cramped layout when the date button text needs more space
+3. **Flex competition** - Both inputs compete for space on narrow screens, causing alignment issues
 
-### Quick Presets (Dropdown/Select)
-
-| Option | Description | Stored as |
-|--------|-------------|-----------|
-| Does not repeat | One-time reminder | `once` |
-| Daily | Every day | `daily` |
-| Weekly on [Day] | Same day each week (dynamic based on selected date) | `weekly` |
-| Monthly on the [Nth] | Same date each month | `monthly` |
-| Annually on [Date] | Once per year | `yearly` |
-| Every weekday (Mon-Fri) | Business days only | `weekdays` |
-| Every weekend (Sat-Sun) | Weekends only | `weekends` |
-| Custom... | Opens custom dialog | `custom` |
-
-### Custom Frequency Dialog
-
-When "Custom..." is selected, a nested dialog opens with:
-
-**1. Repeat Interval**
-- "Repeat every [number input] [unit dropdown]"
-- Units: days, weeks, months, years
-
-**2. Weekly Day Selection** (shown only when unit = weeks)
-- Checkbox row: S M T W T F S
-- Multiple days can be selected
-- Quick-select buttons: "Weekdays" | "Weekends" | "Clear"
-
-**3. Monthly Options** (shown only when unit = months)
-- "On day [number]" (e.g., 15th of each month)
-- "On the [first/second/third/fourth/last] [weekday]" (e.g., first Monday)
-
-**4. End Condition**
-- Never (default)
-- On specific date (date picker)
-- After [X] occurrences
-
----
-
-## Database Schema Changes
-
-Add new columns to the `reminders` table:
-
-```sql
-ALTER TABLE reminders
-ADD COLUMN recurrence_interval integer DEFAULT 1,
-ADD COLUMN recurrence_days_of_week integer[] DEFAULT NULL,
-ADD COLUMN recurrence_day_of_month integer DEFAULT NULL,
-ADD COLUMN recurrence_week_of_month integer DEFAULT NULL,
-ADD COLUMN max_occurrences integer DEFAULT NULL;
+**Current code (line 269-308 in CreateReminderDialog, line 306-345 in EditReminderDialog):**
+```tsx
+<div className="flex gap-3">
+  <div className="flex-1 space-y-2">  {/* Date - takes remaining space */}
+    ...
+  </div>
+  <div className="w-28 space-y-2">    {/* Time - fixed 112px */}
+    ...
+  </div>
+</div>
 ```
 
-| Column | Type | Purpose |
-|--------|------|---------|
-| `recurrence_interval` | integer | Every X units (e.g., every 2 weeks) |
-| `recurrence_days_of_week` | integer[] | Days for weekly (0=Sun, 1=Mon, ..., 6=Sat) |
-| `recurrence_day_of_month` | integer | For monthly: specific day (1-31) |
-| `recurrence_week_of_month` | integer | For monthly: week ordinal (1-4, -1=last) |
-| `max_occurrences` | integer | End after X occurrences |
+### Issue 2: Header Too Close to Top
 
-**Updated frequency values:**
-- `once` - One-time
-- `daily` - Every day
-- `weekly` - Same day each week
-- `monthly` - Same date each month
-- `yearly` - Once per year
-- `weekdays` - Monday through Friday
-- `weekends` - Saturday and Sunday
-- `custom` - Uses recurrence columns
+**Root Cause:**
+When running as a PWA on iPhone 13 in Chrome, the dialog expands to use more of the screen. The current header padding (`py-3`) doesn't account for:
+1. The iOS status bar / notch area (Dynamic Island)
+2. Chrome's PWA mode which uses the full screen
+
+The `safe-area-top` class exists in `index.css` but is not applied to the dialog header.
 
 ---
 
-## Component Architecture
+## Solution
 
+### Fix 1: Responsive Date/Time Layout
+
+Change the layout to stack vertically on mobile and align horizontally on larger screens. This eliminates the cramped side-by-side layout on narrow screens.
+
+**New layout behavior:**
+- **Mobile (< 640px):** Stack vertically - Date on top, Time below, both full width
+- **Desktop (≥ 640px):** Side by side - Date flexible, Time fixed width
+
+**Updated code:**
+```tsx
+<div className="flex flex-col sm:flex-row gap-3">
+  <div className="flex-1 space-y-2">
+    <Label>Date</Label>
+    {/* Date picker button */}
+  </div>
+  <div className="w-full sm:w-32 space-y-2">
+    <Label htmlFor="time">Time</Label>
+    {/* Time input */}
+  </div>
+</div>
+```
+
+**Why this works:**
+- `flex-col` on mobile = vertical stacking (no width competition)
+- `sm:flex-row` on tablet/desktop = horizontal layout
+- `w-full sm:w-32` = full width on mobile, fixed 128px on larger screens
+- Slightly wider time input (32 = 128px vs 28 = 112px) gives Chrome iOS more room
+
+### Fix 2: Dialog Header Safe Area + Better Spacing
+
+Add safe area padding and improve the header spacing for PWA mode.
+
+**Changes to dialog header:**
+```tsx
+<DialogHeader className="sticky top-0 bg-card z-10 px-4 pt-4 pb-3 border-b border-border safe-area-top">
+```
+
+**Changes to Dialog component (dialog.tsx):**
+Update `DialogContent` to handle mobile full-screen mode better:
+```tsx
+className="fixed left-[50%] top-[50%] ... max-h-[100dvh] sm:max-h-[85vh]"
+```
+
+Using `100dvh` (dynamic viewport height) instead of `90vh` ensures the dialog respects the actual visible viewport on mobile browsers including Chrome iOS.
+
+---
+
+## Technical Details
+
+### Files to Modify
+
+| File | Changes |
+|------|---------|
+| `src/components/reminders/CreateReminderDialog.tsx` | Update date/time flex layout to `flex-col sm:flex-row`, add `safe-area-top` to header, update header padding |
+| `src/components/reminders/EditReminderDialog.tsx` | Same changes as CreateReminderDialog |
+| `src/components/ui/dialog.tsx` | Update `DialogContent` to use `max-h-[100dvh]` for better mobile handling |
+
+### Specific Code Changes
+
+**1. CreateReminderDialog.tsx (lines 209, 269-308):**
+
+Header change:
+```tsx
+// Before
+<DialogHeader className="sticky top-0 bg-card z-10 px-4 py-3 border-b border-border">
+
+// After  
+<DialogHeader className="sticky top-0 bg-card z-10 px-4 pt-4 pb-3 border-b border-border safe-area-top">
+```
+
+Date/Time layout change:
+```tsx
+// Before
+<div className="flex gap-3">
+  <div className="flex-1 space-y-2">...</div>
+  <div className="w-28 space-y-2">...</div>
+</div>
+
+// After
+<div className="flex flex-col sm:flex-row gap-3">
+  <div className="flex-1 space-y-2">...</div>
+  <div className="w-full sm:w-32 space-y-2">...</div>
+</div>
+```
+
+**2. EditReminderDialog.tsx (lines 257, 306-345):**
+Same changes as CreateReminderDialog.
+
+**3. dialog.tsx (line 39):**
+
+```tsx
+// Before
+"fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 ... sm:rounded-lg"
+
+// After
+"fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 ... sm:rounded-lg max-h-[100dvh]"
+```
+
+---
+
+## Visual Comparison
+
+### Before (Chrome iOS PWA on iPhone 13)
 ```text
-CreateReminderDialog / EditReminderDialog
-   |
-   +-- FrequencyPicker
-         |
-         +-- Select (Presets dropdown)
-         |     |-- Does not repeat
-         |     |-- Daily
-         |     |-- Weekly on [Tuesday]
-         |     |-- Monthly on the 25th
-         |     |-- Annually on Jan 25
-         |     |-- Every weekday (Mon-Fri)
-         |     |-- Every weekend (Sat-Sun)
-         |     +-- Custom...
-         |
-         +-- CustomFrequencyDialog (modal)
-               |
-               +-- Interval Input + Unit Select
-               +-- Day of Week Selection (with Weekdays/Weekends shortcuts)
-               +-- Monthly Options (conditional)
-               +-- End Condition Radio Group
++----------------------------------+
+|X  Edit Reminder  🗑️             | <- Header touching notch area
+|----------------------------------|
+| [Date: Jan 25    ][10:00]        | <- Cramped, misaligned inputs
 ```
 
----
-
-## UI Mockups
-
-### Frequency Picker (Collapsed)
+### After (Chrome iOS PWA on iPhone 13)  
 ```text
-+------------------------------------------+
-| Frequency                                |
-| [v] Weekly on Tuesday                    |
-+------------------------------------------+
-```
-
-### Frequency Picker (Dropdown Open)
-```text
-+------------------------------------------+
-| Does not repeat                          |
-| Daily                                    |
-| Weekly on Tuesday                    [*] |
-| Monthly on the 25th                      |
-| Annually on Jan 25                       |
-|------------------------------------------|
-| Every weekday (Mon-Fri)                  |
-| Every weekend (Sat-Sun)                  |
-|------------------------------------------|
-| Custom...                                |
-+------------------------------------------+
-```
-
-### Custom Frequency Dialog
-```text
-+------------------------------------------+
-|           Custom Recurrence              |
-+------------------------------------------+
-| Repeat every [ 1 ] [ weeks  v]           |
-|                                          |
-| Repeat on                                |
-| [Weekdays] [Weekends] [Clear]            |
-|                                          |
-| [ S ] [ M ] [ T ] [ W ] [ T ] [ F ] [ S ]|
-|   o    [*]   [*]   [*]   [*]   [*]    o  |
-|                                          |
-| Ends                                     |
-| (*) Never                                |
-| ( ) On  [Pick a date...]                 |
-| ( ) After [ 10 ] occurrences             |
-|                                          |
-|                    [Cancel]  [Done]      |
-+------------------------------------------+
++----------------------------------+
+|   (safe area padding)            |
+|X  Edit Reminder  🗑️             | <- Proper spacing from status bar
+|----------------------------------|
+| Date                             |
+| [📅 Jan 25, 2026              ]  | <- Full width on mobile
+| Time                             |
+| [10:00                        ]  | <- Full width on mobile
 ```
 
 ---
 
-## Technical Implementation
+## Why Chrome iOS Behaves Differently
 
-### 1. New Component: FrequencyPicker
+1. **Chrome on iOS uses WebKit** - Apple requires all iOS browsers to use WebKit, but Chrome wraps it with its own UI layer
+2. **PWA rendering** - Chrome's PWA implementation may handle viewport and safe areas slightly differently than Safari
+3. **Time input rendering** - Chrome iOS renders `<input type="time">` with its own styling that may have different dimensions than Safari's native picker
+4. **Dynamic viewport** - Chrome iOS better supports `dvh` (dynamic viewport height) units which account for browser chrome appearing/disappearing
 
-**File:** `src/components/reminders/FrequencyPicker.tsx`
-
-```typescript
-interface FrequencyPickerProps {
-  referenceDate: Date;  // To generate dynamic labels
-  value: FrequencyConfig;
-  onChange: (config: FrequencyConfig) => void;
-}
-
-interface FrequencyConfig {
-  frequency: "once" | "daily" | "weekly" | "monthly" | "yearly" | "weekdays" | "weekends" | "custom";
-  interval?: number;
-  daysOfWeek?: number[];
-  dayOfMonth?: number;
-  weekOfMonth?: number;
-  endType?: "never" | "on_date" | "after_count";
-  endDate?: Date;
-  maxOccurrences?: number;
-}
-```
-
-Features:
-- Dynamic preset labels based on reference date
-- Human-readable summary display
-- Opens CustomFrequencyDialog when "Custom" selected
-
-### 2. New Component: CustomFrequencyDialog
-
-**File:** `src/components/reminders/CustomFrequencyDialog.tsx`
-
-Contains:
-- Interval number input (1-99) + unit dropdown (days/weeks/months/years)
-- Day-of-week toggle buttons with quick-select (Weekdays/Weekends/Clear)
-- Monthly options radio (by day number or by week position)
-- End condition radio group with date picker and occurrence counter
-
-### 3. New Utility: recurrenceUtils
-
-**File:** `src/lib/recurrenceUtils.ts`
-
-Helper functions:
-- `getRecurrenceSummary(config, referenceDate)` - Human-readable text (e.g., "Every 2 weeks on Mon, Wed, Fri until Dec 31")
-- `calculateNextOccurrence(currentDate, config)` - Compute next scheduled date
-- `getPresetLabel(preset, referenceDate)` - Dynamic preset labels
-- `configToDbFields(config)` - Convert UI config to database columns
-- `dbFieldsToConfig(reminder)` - Convert database row to UI config
-
-### 4. Update CreateReminderDialog
-
-**File:** `src/components/reminders/CreateReminderDialog.tsx`
-
-Changes:
-- Replace pill buttons with `<FrequencyPicker />`
-- Update state from simple `frequency` string to `FrequencyConfig` object
-- Update form submission to include new recurrence fields
-
-### 5. Update EditReminderDialog
-
-**File:** `src/components/reminders/EditReminderDialog.tsx`
-
-Changes:
-- Replace pill buttons with `<FrequencyPicker />`
-- Load existing recurrence settings from reminder using `dbFieldsToConfig()`
-- Update form submission to include new recurrence fields
-
-### 6. Update check-reminders Edge Function
-
-**File:** `supabase/functions/check-reminders/index.ts`
-
-Enhance recurring logic to handle:
-- Custom intervals (every X days/weeks/months/years)
-- Specific days of week (including weekdays/weekends shortcuts)
-- Monthly by day number or by week position
-- `max_occurrences` tracking alongside `repeat_until`
-
-Example next occurrence calculation:
-```typescript
-function calculateNextSchedule(reminder) {
-  const current = new Date(reminder.scheduled_at);
-  const interval = reminder.recurrence_interval || 1;
-  
-  switch (reminder.frequency) {
-    case "daily":
-      return addDays(current, interval);
-    case "weekly":
-      return addWeeks(current, interval);
-    case "weekdays":
-      return getNextWeekday(current);
-    case "weekends":
-      return getNextWeekend(current);
-    case "monthly":
-      // Handle by day or by week position
-      break;
-    case "custom":
-      // Use recurrence_days_of_week to find next valid day
-      break;
-  }
-}
-```
-
----
-
-## File Changes Summary
-
-| File | Change |
-|------|--------|
-| Database Migration | Add recurrence columns to reminders table |
-| `src/components/reminders/FrequencyPicker.tsx` | New - preset dropdown with dynamic labels |
-| `src/components/reminders/CustomFrequencyDialog.tsx` | New - full custom config modal |
-| `src/lib/recurrenceUtils.ts` | New - helper functions |
-| `src/components/reminders/CreateReminderDialog.tsx` | Replace pills with FrequencyPicker |
-| `src/components/reminders/EditReminderDialog.tsx` | Replace pills with FrequencyPicker |
-| `supabase/functions/check-reminders/index.ts` | Enhanced recurrence calculation |
-
----
-
-## Technical Notes
-
-1. **Backward Compatibility**: Existing reminders with `frequency: "daily"` or `"weekly"` will continue to work. The edge function handles them with default interval of 1 and no custom days.
-
-2. **Dynamic Preset Labels**: Labels adapt to the selected date:
-   - If Tuesday is selected: "Weekly on Tuesday"
-   - If 25th is selected: "Monthly on the 25th"
-   - If Jan 25 is selected: "Annually on January 25"
-
-3. **Weekdays/Weekends Shortcuts**: Both available as presets AND as quick-select buttons in the custom dialog for selecting multiple days quickly.
-
-4. **Validation Rules**:
-   - Custom weekly requires at least one day selected
-   - Interval must be between 1-99
-   - End date must be in the future
-   - Max occurrences must be at least 1
-
-5. **Mobile UX**: Custom dialog will be scrollable with large tap targets for day checkboxes.
+The responsive stacking approach sidesteps these browser-specific quirks by giving each input full width on mobile, eliminating the need for precise width calculations.
 
