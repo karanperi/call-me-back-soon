@@ -15,6 +15,7 @@ import Home from "./pages/Home";
 import History from "./pages/History";
 import Voices from "./pages/Voices";
 import Profile from "./pages/Profile";
+import Contacts from "./pages/Contacts";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -39,6 +40,7 @@ const App = () => (
                 <Route path="/history" element={<History />} />
                 <Route path="/voices" element={<Voices />} />
                 <Route path="/profile" element={<Profile />} />
+                <Route path="/contacts" element={<Contacts />} />
               </Route>
             </Route>
 

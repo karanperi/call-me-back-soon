@@ -8,12 +8,14 @@ import {
   HelpCircle,
   Shield,
   FileText,
+  Users,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { useProfile } from "@/hooks/useProfile";
+import { useContacts } from "@/hooks/useContacts";
 
 const voiceNames: Record<string, string> = {
   friendly_female: "Friendly Female",
@@ -24,6 +26,7 @@ const Profile = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { data: profile } = useProfile();
+  const { data: contacts = [] } = useContacts();
 
   const handleLogout = async () => {
     const { error } = await supabase.auth.signOut();
@@ -75,6 +78,20 @@ const Profile = () => {
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">{voiceNames[defaultVoice]}</span>
+            <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </div>
+          </Link>
+          <div className="border-t border-border" />
+          <Link
+            to="/contacts"
+            className="flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <Users className="w-5 h-5 text-muted-foreground" />
+              <span className="font-medium text-foreground">Saved Contacts</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">{contacts.length}</span>
               <ChevronRight className="w-5 h-5 text-muted-foreground" />
             </div>
           </Link>

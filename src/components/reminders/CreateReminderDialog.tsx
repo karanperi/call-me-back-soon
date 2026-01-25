@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CalendarIcon, X, Globe } from "lucide-react";
+import { ContactPickerIcon } from "@/components/contacts/ContactPickerIcon";
 import { useState, useEffect, useCallback } from "react";
 import { format, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -194,12 +195,23 @@ export const CreateReminderDialog = ({
             </p>
             <div className="space-y-2">
               <Label htmlFor="recipientName">Recipient Name</Label>
-              <Input
-                id="recipientName"
-                placeholder="e.g. Grandma Jane"
-                value={recipientName}
-                onChange={(e) => setRecipientName(e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  id="recipientName"
+                  placeholder="e.g. Grandma Jane"
+                  value={recipientName}
+                  onChange={(e) => setRecipientName(e.target.value)}
+                  className="pr-10"
+                />
+                <div className="absolute right-1 top-1/2 -translate-y-1/2">
+                  <ContactPickerIcon
+                    onSelect={(name, phone) => {
+                      setRecipientName(name);
+                      setPhoneNumber(phone);
+                    }}
+                  />
+                </div>
+              </div>
             </div>
             <div className="space-y-2">
               <Label htmlFor="phoneNumber">Phone Number</Label>
