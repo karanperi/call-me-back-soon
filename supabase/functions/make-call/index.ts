@@ -13,7 +13,16 @@ interface ReminderPayload {
   message: string;
   voice: "friendly_female" | "friendly_male";
   userId: string;
+  isServiceCall?: boolean; // Flag for internal service-to-service calls
 }
+
+// Input validation constants
+const VALID_VOICES = ["friendly_female", "friendly_male"];
+const UK_PHONE_REGEX = /^\+447\d{9}$/;
+const MAX_MESSAGE_LENGTH = 500;
+const MIN_MESSAGE_LENGTH = 1;
+const MAX_RECIPIENT_NAME_LENGTH = 100;
+const MIN_RECIPIENT_NAME_LENGTH = 2;
 
 serve(async (req) => {
   // Handle CORS preflight requests
@@ -22,6 +31,60 @@ serve(async (req) => {
   }
 
   try {
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
+    const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
+    const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
+    const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
+
+    if (!ELEVENLABS_API_KEY || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
+      console.error("Missing environment variables");
+      return new Response(
+        JSON.stringify({ error: "Server configuration error" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Validate Authorization header
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    
+    // Check if this is a service role call (from check-reminders function)
+    const isServiceRoleCall = token === SUPABASE_SERVICE_ROLE_KEY;
+    
+    let authenticatedUserId: string | null = null;
+    
+    if (isServiceRoleCall) {
+      // Service role calls are trusted (internal function-to-function calls)
+      console.log("Service role call detected - skipping user authentication");
+    } else {
+      // Regular user call - validate the JWT using getClaims
+      const supabaseAuth = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+        global: { headers: { Authorization: authHeader } }
+      });
+      
+      const { data: claimsData, error: claimsError } = await supabaseAuth.auth.getClaims(token);
+      
+      if (claimsError || !claimsData?.claims) {
+        console.error("Auth claims error:", claimsError);
+        return new Response(
+          JSON.stringify({ error: "Unauthorized" }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      
+      authenticatedUserId = claimsData.claims.sub as string;
+    }
+
     const payload: ReminderPayload = await req.json();
     const { reminderId, recipientName, phoneNumber, message, voice, userId } = payload;
 
@@ -33,23 +96,48 @@ serve(async (req) => {
       );
     }
 
-    // Get environment variables
-    const ELEVENLABS_API_KEY = Deno.env.get("ELEVENLABS_API_KEY");
-    const TWILIO_ACCOUNT_SID = Deno.env.get("TWILIO_ACCOUNT_SID");
-    const TWILIO_AUTH_TOKEN = Deno.env.get("TWILIO_AUTH_TOKEN");
-    const TWILIO_PHONE_NUMBER = Deno.env.get("TWILIO_PHONE_NUMBER");
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-
-    if (!ELEVENLABS_API_KEY || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
-      console.error("Missing environment variables");
+    // For non-service calls, verify the userId matches the authenticated user
+    if (!isServiceRoleCall && authenticatedUserId !== userId) {
+      console.error("User ID mismatch - possible spoofing attempt");
       return new Response(
-        JSON.stringify({ error: "Server configuration error" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Forbidden" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Initialize Supabase client with service role
+    // Input validation - Phone number format (UK)
+    if (!UK_PHONE_REGEX.test(phoneNumber)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid UK phone number format. Expected: +447XXXXXXXXX" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Input validation - Message length
+    if (message.length < MIN_MESSAGE_LENGTH || message.length > MAX_MESSAGE_LENGTH) {
+      return new Response(
+        JSON.stringify({ error: `Message must be ${MIN_MESSAGE_LENGTH}-${MAX_MESSAGE_LENGTH} characters` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Input validation - Voice parameter
+    if (!VALID_VOICES.includes(voice)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid voice selection" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Input validation - Recipient name length
+    if (recipientName.length < MIN_RECIPIENT_NAME_LENGTH || recipientName.length > MAX_RECIPIENT_NAME_LENGTH) {
+      return new Response(
+        JSON.stringify({ error: `Recipient name must be ${MIN_RECIPIENT_NAME_LENGTH}-${MAX_RECIPIENT_NAME_LENGTH} characters` }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Initialize Supabase client with service role for database operations
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
     // Map voice selection to ElevenLabs voice IDs
