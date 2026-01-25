@@ -70,6 +70,25 @@ export const EditReminderDialog = ({
   const deleteReminder = useDeleteReminder();
   const { makeCall, isLoading: isCallingNow } = useMakeCall();
 
+  // Update date and time when timezone changes
+  const handleTimezoneChange = (newTimezone: string) => {
+    if (date && time) {
+      // Convert current date/time from old timezone to UTC, then to new timezone
+      const [hours, minutes] = time.split(":").map(Number);
+      const currentDateTime = new Date(date);
+      currentDateTime.setHours(hours, minutes, 0, 0);
+      
+      // Convert from old timezone to UTC
+      const utcTime = fromZonedTime(currentDateTime, timezone);
+      // Convert from UTC to new timezone
+      const newZonedTime = toZonedTime(utcTime, newTimezone);
+      
+      setDate(newZonedTime);
+      setTime(format(newZonedTime, "HH:mm"));
+    }
+    setTimezone(newTimezone);
+  };
+
   // Initialize form with reminder data
   useEffect(() => {
     if (reminder) {
@@ -301,7 +320,7 @@ export const EditReminderDialog = ({
                   <Globe className="h-3.5 w-3.5" />
                   Timezone
                 </Label>
-                <Select value={timezone} onValueChange={setTimezone}>
+                <Select value={timezone} onValueChange={handleTimezoneChange}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select timezone" />
                   </SelectTrigger>
