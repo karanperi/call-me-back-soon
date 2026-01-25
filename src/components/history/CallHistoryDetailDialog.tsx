@@ -5,7 +5,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { X, Phone, User, MessageSquare, Calendar, Clock, Globe, CheckCircle, XCircle, Voicemail } from "lucide-react";
+import { X, Phone, User, MessageSquare, Calendar, Clock, Globe, CheckCircle, XCircle, Voicemail, AlertTriangle, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,9 @@ import { Tables } from "@/integrations/supabase/types";
 import { getDefaultTimezone } from "@/lib/timezones";
 import { formatPhoneForDisplay } from "@/lib/phoneUtils";
 
-type CallHistory = Tables<"call_history">;
+type CallHistory = Tables<"call_history"> & {
+  error_message?: string | null;
+};
 
 interface CallHistoryDetailDialogProps {
   open: boolean;
@@ -37,10 +39,15 @@ export const CallHistoryDetailDialog = ({
       case "completed":
         return <CheckCircle className="h-5 w-5 text-success" />;
       case "missed":
-      case "failed":
         return <XCircle className="h-5 w-5 text-destructive" />;
+      case "failed":
+        return <AlertTriangle className="h-5 w-5 text-destructive" />;
       case "voicemail":
         return <Voicemail className="h-5 w-5 text-warning" />;
+      case "in_progress":
+        return <Loader2 className="h-5 w-5 text-warning animate-spin" />;
+      case "pending":
+        return <Clock className="h-5 w-5 text-muted-foreground" />;
       default:
         return <Phone className="h-5 w-5 text-muted-foreground" />;
     }
@@ -56,6 +63,10 @@ export const CallHistoryDetailDialog = ({
         return "Call Failed";
       case "voicemail":
         return "Voicemail Left";
+      case "in_progress":
+        return "Call In Progress";
+      case "pending":
+        return "Preparing Call";
       default:
         return status.charAt(0).toUpperCase() + status.slice(1);
     }
@@ -69,7 +80,10 @@ export const CallHistoryDetailDialog = ({
       case "failed":
         return "bg-destructive/10 text-destructive border-destructive/20";
       case "voicemail":
+      case "in_progress":
         return "bg-warning/10 text-warning border-warning/20";
+      case "pending":
+        return "bg-muted text-muted-foreground border-border";
       default:
         return "bg-muted text-muted-foreground border-border";
     }
@@ -187,6 +201,19 @@ export const CallHistoryDetailDialog = ({
               )}
             </div>
           </div>
+
+          {/* Error Details (for failed calls) */}
+          {callHistory.status === "failed" && callHistory.error_message && (
+            <div className="bg-destructive/5 border border-destructive/20 rounded-lg p-4 space-y-4">
+              <p className="text-xs font-medium text-destructive uppercase tracking-wider flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Error Details
+              </p>
+              <p className="text-sm text-destructive leading-relaxed">
+                {callHistory.error_message}
+              </p>
+            </div>
+          )}
 
           {/* Message */}
           <div className="bg-secondary/50 rounded-lg p-4 space-y-4">

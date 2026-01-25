@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Search, Clock, ChevronRight } from "lucide-react";
+import { Settings, Search, Clock, ChevronRight, AlertCircle } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import { useCallHistory } from "@/hooks/useCallHistory";
@@ -8,7 +8,7 @@ import { CallHistoryDetailDialog } from "@/components/history/CallHistoryDetailD
 import { Tables } from "@/integrations/supabase/types";
 
 type CallHistory = Tables<"call_history">;
-type Filter = "all" | "completed" | "missed" | "voicemail";
+type Filter = "all" | "completed" | "missed" | "voicemail" | "failed";
 
 const History = () => {
   const [filter, setFilter] = useState<Filter>("all");
@@ -22,6 +22,7 @@ const History = () => {
     { value: "completed", label: "Answered" },
     { value: "missed", label: "Missed" },
     { value: "voicemail", label: "Voicemail" },
+    { value: "failed", label: "Failed" },
   ];
 
   const getStatusColor = (status: string) => {
@@ -32,7 +33,10 @@ const History = () => {
       case "failed":
         return "bg-destructive";
       case "voicemail":
+      case "in_progress":
         return "bg-warning";
+      case "pending":
+        return "bg-muted-foreground";
       default:
         return "bg-muted";
     }
@@ -50,9 +54,19 @@ const History = () => {
         return `Left voicemail • ${timeAgo}`;
       case "failed":
         return `Call failed • ${timeAgo}`;
+      case "in_progress":
+        return `Call in progress • ${timeAgo}`;
+      case "pending":
+        return `Preparing call • ${timeAgo}`;
       default:
         return timeAgo;
     }
+  };
+
+  const getErrorPreview = (errorMessage: string | null) => {
+    if (!errorMessage) return null;
+    // Truncate to first 50 characters for preview
+    return errorMessage.length > 50 ? errorMessage.substring(0, 50) + "..." : errorMessage;
   };
 
   return (
@@ -110,10 +124,19 @@ const History = () => {
                   className="bg-card rounded-lg p-4 card-shadow border border-border flex items-center gap-4 cursor-pointer hover:bg-card/80 transition-colors"
                 >
                   {/* Avatar */}
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
-                    <span className="text-primary font-semibold">
-                      {item.recipient_name.charAt(0)}
-                    </span>
+                  <div className={cn(
+                    "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0",
+                    item.status === "failed" 
+                      ? "bg-destructive/10" 
+                      : "bg-gradient-to-br from-primary/20 to-primary/10"
+                  )}>
+                    {item.status === "failed" ? (
+                      <AlertCircle className="w-5 h-5 text-destructive" />
+                    ) : (
+                      <span className="text-primary font-semibold">
+                        {item.recipient_name.charAt(0)}
+                      </span>
+                    )}
                   </div>
 
                   {/* Content */}
@@ -132,6 +155,13 @@ const History = () => {
                     <p className="text-sm text-muted-foreground truncate">
                       {getStatusText(item)}
                     </p>
+                    {/* Show error preview for failed calls */}
+                    {item.status === "failed" && (item as any).error_message && (
+                      <p className="text-xs text-destructive mt-1 truncate flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3 flex-shrink-0" />
+                        {getErrorPreview((item as any).error_message)}
+                      </p>
+                    )}
                   </div>
 
                   {/* Chevron */}
