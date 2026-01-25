@@ -5,7 +5,8 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { X, Phone, User, MessageSquare, Calendar, Clock, Globe, CheckCircle, XCircle, Voicemail, AlertTriangle, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { X, Phone, User, MessageSquare, Calendar, Clock, Globe, CheckCircle, XCircle, Voicemail, AlertTriangle, Loader2, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
@@ -21,12 +22,14 @@ interface CallHistoryDetailDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   callHistory: CallHistory | null;
+  onDuplicate?: (callHistory: CallHistory) => void;
 }
 
 export const CallHistoryDetailDialog = ({
   open,
   onOpenChange,
   callHistory,
+  onDuplicate,
 }: CallHistoryDetailDialogProps) => {
   if (!callHistory) return null;
 
@@ -225,6 +228,21 @@ export const CallHistoryDetailDialog = ({
               {callHistory.message}
             </p>
           </div>
+
+          {/* Duplicate Button */}
+          {onDuplicate && (
+            <Button
+              onClick={() => {
+                onDuplicate(callHistory);
+                onOpenChange(false);
+              }}
+              className="w-full"
+              variant="outline"
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              Duplicate as New Reminder
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>
