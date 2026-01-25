@@ -25,6 +25,7 @@ export const useReminders = () => {
       return data as Reminder[];
     },
     enabled: !!user,
+    refetchInterval: 2000, // Auto-refresh every 2 seconds
   });
 };
 
