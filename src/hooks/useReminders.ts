@@ -90,3 +90,25 @@ export const useDeleteReminder = () => {
     },
   });
 };
+
+export const useCreateMultipleReminders = () => {
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+
+  return useMutation({
+    mutationFn: async (reminders: Omit<ReminderInsert, "user_id">[]) => {
+      if (!user) throw new Error("User not authenticated");
+
+      const { data, error } = await supabase
+        .from("reminders")
+        .insert(reminders.map(r => ({ ...r, user_id: user.id })))
+        .select();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["reminders"] });
+    },
+  });
+};
