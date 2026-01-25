@@ -20,6 +20,7 @@ export type Database = {
           attempts: number
           created_at: string
           duration_seconds: number | null
+          error_message: string | null
           id: string
           message: string
           phone_number: string
@@ -34,6 +35,7 @@ export type Database = {
           attempts?: number
           created_at?: string
           duration_seconds?: number | null
+          error_message?: string | null
           id?: string
           message: string
           phone_number: string
@@ -48,6 +50,7 @@ export type Database = {
           attempts?: number
           created_at?: string
           duration_seconds?: number | null
+          error_message?: string | null
           id?: string
           message?: string
           phone_number?: string

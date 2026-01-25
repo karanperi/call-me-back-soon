@@ -3,9 +3,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { Tables } from "@/integrations/supabase/types";
 import { useAuth } from "@/hooks/useAuth";
 
-export type CallHistory = Tables<"call_history">;
+export type CallHistory = Tables<"call_history"> & {
+  error_message?: string | null;
+};
 
-export const useCallHistory = (filter?: "completed" | "missed" | "voicemail") => {
+export const useCallHistory = (filter?: "completed" | "missed" | "voicemail" | "failed") => {
   const { user } = useAuth();
 
   return useQuery({

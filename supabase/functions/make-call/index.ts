@@ -13,7 +13,7 @@ interface ReminderPayload {
   message: string;
   voice: "friendly_female" | "friendly_male";
   userId: string;
-  isServiceCall?: boolean; // Flag for internal service-to-service calls
+  isServiceCall?: boolean;
 }
 
 // Input validation constants
@@ -25,10 +25,13 @@ const MAX_RECIPIENT_NAME_LENGTH = 100;
 const MIN_RECIPIENT_NAME_LENGTH = 2;
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // Initialize variables for tracking
+  let callHistoryId: string | null = null;
+  let supabase: ReturnType<typeof createClient> | null = null;
 
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -57,17 +60,13 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace("Bearer ", "");
-    
-    // Check if this is a service role call (from check-reminders function)
     const isServiceRoleCall = token === SUPABASE_SERVICE_ROLE_KEY;
     
     let authenticatedUserId: string | null = null;
     
     if (isServiceRoleCall) {
-      // Service role calls are trusted (internal function-to-function calls)
       console.log("Service role call detected - skipping user authentication");
     } else {
-      // Regular user call - validate the JWT using getClaims
       const supabaseAuth = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
         global: { headers: { Authorization: authHeader } }
       });
@@ -105,8 +104,56 @@ serve(async (req) => {
       );
     }
 
+    // Initialize Supabase client with service role for database operations
+    supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
+
+    // Personalize the message with recipient's name
+    const personalizedMessage = `Hello ${recipientName}. ${message}`;
+
+    // ============================================================
+    // STEP 1: Create call history record IMMEDIATELY with "pending" status
+    // ============================================================
+    const { data: historyData, error: historyCreateError } = await supabase
+      .from("call_history")
+      .insert({
+        reminder_id: reminderId,
+        user_id: userId,
+        recipient_name: recipientName,
+        phone_number: phoneNumber,
+        message: personalizedMessage,
+        voice: voice,
+        status: "pending",
+        attempted_at: new Date().toISOString(),
+      } as any)
+      .select('id')
+      .single();
+
+    if (historyCreateError) {
+      console.error("Error creating call history:", historyCreateError);
+      // Continue anyway - don't fail the call just because history failed
+    } else if (historyData) {
+      callHistoryId = (historyData as any).id;
+    }
+
+    // Helper function to update history status
+    const updateHistoryStatus = async (status: string, errorMessage?: string) => {
+      if (callHistoryId && supabase) {
+        // deno-lint-ignore no-explicit-any
+        await (supabase as any)
+          .from("call_history")
+          .update({ 
+            status, 
+            error_message: errorMessage || null 
+          })
+          .eq("id", callHistoryId);
+      }
+    };
+
+    // ============================================================
     // Input validation - Phone number format (UK)
+    // ============================================================
     if (!UK_PHONE_REGEX.test(phoneNumber)) {
+      await updateHistoryStatus("failed", "Invalid UK phone number format. Expected: +447XXXXXXXXX");
       return new Response(
         JSON.stringify({ error: "Invalid UK phone number format. Expected: +447XXXXXXXXX" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -115,14 +162,17 @@ serve(async (req) => {
 
     // Input validation - Message length
     if (message.length < MIN_MESSAGE_LENGTH || message.length > MAX_MESSAGE_LENGTH) {
+      const errorMsg = `Message must be ${MIN_MESSAGE_LENGTH}-${MAX_MESSAGE_LENGTH} characters`;
+      await updateHistoryStatus("failed", errorMsg);
       return new Response(
-        JSON.stringify({ error: `Message must be ${MIN_MESSAGE_LENGTH}-${MAX_MESSAGE_LENGTH} characters` }),
+        JSON.stringify({ error: errorMsg }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // Input validation - Voice parameter
     if (!VALID_VOICES.includes(voice)) {
+      await updateHistoryStatus("failed", "Invalid voice selection");
       return new Response(
         JSON.stringify({ error: "Invalid voice selection" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -131,29 +181,26 @@ serve(async (req) => {
 
     // Input validation - Recipient name length
     if (recipientName.length < MIN_RECIPIENT_NAME_LENGTH || recipientName.length > MAX_RECIPIENT_NAME_LENGTH) {
+      const errorMsg = `Recipient name must be ${MIN_RECIPIENT_NAME_LENGTH}-${MAX_RECIPIENT_NAME_LENGTH} characters`;
+      await updateHistoryStatus("failed", errorMsg);
       return new Response(
-        JSON.stringify({ error: `Recipient name must be ${MIN_RECIPIENT_NAME_LENGTH}-${MAX_RECIPIENT_NAME_LENGTH} characters` }),
+        JSON.stringify({ error: errorMsg }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Initialize Supabase client with service role for database operations
-    const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
-
-    // Map voice selection to ElevenLabs voice IDs
+    // ============================================================
+    // STEP 2: Generate speech with ElevenLabs
+    // ============================================================
     const voiceMap: Record<string, string> = {
-      friendly_female: "caMurMrvWp0v3NFJALhl", // Custom female voice
-      friendly_male: "VR6AewLTigWG4xSOukaG",   // Josh
+      friendly_female: "caMurMrvWp0v3NFJALhl",
+      friendly_male: "VR6AewLTigWG4xSOukaG",
     };
 
     const voiceId = voiceMap[voice] || voiceMap.friendly_female;
 
-    // Personalize the message with recipient's name
-    const personalizedMessage = `Hello ${recipientName}. ${message}`;
-
     console.log(`Generating speech for reminder ${reminderId}...`);
 
-    // Step 1: Generate speech with ElevenLabs
     const elevenLabsResponse = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
@@ -177,15 +224,19 @@ serve(async (req) => {
     if (!elevenLabsResponse.ok) {
       const errorText = await elevenLabsResponse.text();
       console.error("Speech generation error:", errorText);
-      throw new Error("speech_generation_failed");
+      await updateHistoryStatus("failed", `Speech generation failed: ${elevenLabsResponse.status}`);
+      return new Response(
+        JSON.stringify({ error: "Failed to generate audio for your call" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Get audio as ArrayBuffer
     const audioBuffer = await elevenLabsResponse.arrayBuffer();
-
     console.log(`Speech generated. Audio size: ${audioBuffer.byteLength} bytes`);
 
-    // Step 2: Upload audio to Supabase Storage for Twilio to access
+    // ============================================================
+    // STEP 3: Upload audio to Supabase Storage
+    // ============================================================
     const audioFileName = `${userId}/reminder-${reminderId}-${Date.now()}.mp3`;
     
     const { error: uploadError } = await supabase.storage
@@ -197,26 +248,37 @@ serve(async (req) => {
 
     if (uploadError) {
       console.error("Storage upload error:", uploadError);
-      throw new Error("audio_upload_failed");
+      await updateHistoryStatus("failed", `Audio upload failed: ${uploadError.message}`);
+      return new Response(
+        JSON.stringify({ error: "Failed to prepare audio for your call" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // Create a signed URL with 1 hour expiration for Twilio to access the audio
     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from("call-audio")
-      .createSignedUrl(audioFileName, 3600); // 1 hour expiration
+      .createSignedUrl(audioFileName, 3600);
 
     if (signedUrlError || !signedUrlData?.signedUrl) {
       console.error("Signed URL error:", signedUrlError);
-      throw new Error("audio_url_generation_failed");
+      await updateHistoryStatus("failed", "Audio URL generation failed");
+      return new Response(
+        JSON.stringify({ error: "Failed to prepare audio for your call" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const audioUrl = signedUrlData.signedUrl;
     console.log(`Audio uploaded with signed URL`);
 
-    // Step 3: Make the call with Twilio
+    // ============================================================
+    // STEP 4: Make the call with Twilio
+    // ============================================================
+    // Update status to "in_progress" before calling
+    await updateHistoryStatus("in_progress");
+
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Calls.json`;
 
-    // TwiML instructions for the call
     const twiml = `
       <Response>
         <Play>${audioUrl}</Play>
@@ -244,26 +306,19 @@ serve(async (req) => {
 
     if (!twilioResponse.ok) {
       console.error("Call delivery error:", twilioResult);
-      throw new Error("call_delivery_failed");
+      const errorMsg = twilioResult.message || twilioResult.error_message || `Twilio error: ${twilioResponse.status}`;
+      await updateHistoryStatus("failed", errorMsg);
+      return new Response(
+        JSON.stringify({ error: "Failed to initiate the call" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
+    // ============================================================
+    // STEP 5: Update history to completed
+    // ============================================================
     console.log(`Call initiated. Call SID: ${twilioResult.sid}`);
-
-    // Step 4: Create call history record with service role (bypasses RLS)
-    const { error: historyError } = await supabase.from("call_history").insert({
-      reminder_id: reminderId,
-      user_id: userId,
-      recipient_name: recipientName,
-      phone_number: phoneNumber,
-      message: personalizedMessage,
-      voice: voice,
-      status: "completed",
-      attempted_at: new Date().toISOString(),
-    });
-
-    if (historyError) {
-      console.error("Error creating call history:", historyError);
-    }
+    await updateHistoryStatus("completed");
 
     return new Response(
       JSON.stringify({
@@ -275,27 +330,37 @@ serve(async (req) => {
     );
 
   } catch (error: unknown) {
-    const errorCode = error instanceof Error ? error.message : "internal_error";
+    const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
     console.error("Error in make-call function:", error);
     
-    // Return generic error messages to clients
-    const clientMessage = getClientErrorMessage(errorCode);
+    // Update history to failed if we have a record
+    if (callHistoryId && supabase) {
+      try {
+        const { data: currentRecord } = await supabase
+          .from("call_history")
+          .select("status")
+          .eq("id", callHistoryId)
+          .single();
+        
+        const record = currentRecord as any;
+        if (record && record.status !== "failed") {
+          // deno-lint-ignore no-explicit-any
+          await (supabase as any)
+            .from("call_history")
+            .update({ 
+              status: "failed", 
+              error_message: errorMessage 
+            })
+            .eq("id", callHistoryId);
+        }
+      } catch (updateError) {
+        console.error("Failed to update history with error:", updateError);
+      }
+    }
+    
     return new Response(
-      JSON.stringify({ error: clientMessage }),
+      JSON.stringify({ error: "An unexpected error occurred" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
-
-// Map internal error codes to safe client-facing messages
-function getClientErrorMessage(errorCode: string): string {
-  const errorMessages: Record<string, string> = {
-    "speech_generation_failed": "Failed to generate audio for your call",
-    "audio_upload_failed": "Failed to prepare audio for your call",
-    "audio_url_generation_failed": "Failed to prepare audio for your call",
-    "call_delivery_failed": "Failed to initiate the call",
-    "internal_error": "An unexpected error occurred",
-  };
-  
-  return errorMessages[errorCode] || "An unexpected error occurred";
-}
