@@ -7,7 +7,7 @@ export type CallHistory = Tables<"call_history"> & {
   error_message?: string | null;
 };
 
-export const useCallHistory = (filter?: "completed" | "missed" | "voicemail" | "failed") => {
+export const useCallHistory = (filter?: "completed" | "missed" | "voicemail" | "failed" | "in_progress" | "pending") => {
   const { user } = useAuth();
 
   return useQuery({
