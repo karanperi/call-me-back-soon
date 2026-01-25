@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Settings, Bell, ChevronRight } from "lucide-react";
+import { Settings, Bell, ChevronRight, Phone } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { useReminders, useUpdateReminder, Reminder } from "@/hooks/useReminders";
 import { EditReminderDialog } from "@/components/reminders/EditReminderDialog";
+import { useCallHistory } from "@/hooks/useCallHistory";
 import { format } from "date-fns";
 
 type Tab = "active" | "upcoming";
@@ -14,7 +15,15 @@ const Home = () => {
   const [activeTab, setActiveTab] = useState<Tab>("active");
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const { data: reminders = [], isLoading } = useReminders();
+  const { data: inProgressCalls = [] } = useCallHistory("in_progress");
   const updateReminder = useUpdateReminder();
+  
+  // Get reminder IDs that have in-progress calls
+  const inProgressReminderIds = new Set(
+    inProgressCalls
+      .filter(call => call.reminder_id)
+      .map(call => call.reminder_id)
+  );
 
   const toggleReminder = (e: React.MouseEvent, id: string, isActive: boolean) => {
     e.stopPropagation(); // Prevent card click when toggling switch
@@ -25,10 +34,14 @@ const Home = () => {
     setEditingReminder(reminder);
   };
 
-  const activeReminders = reminders.filter((r) => r.is_active);
+  // Include reminders that are active OR have an in-progress call
+  const activeReminders = reminders.filter((r) => r.is_active || inProgressReminderIds.has(r.id));
   const upcomingReminders = reminders.filter((r) => r.frequency === "once" && new Date(r.scheduled_at) > new Date());
 
   const displayReminders = activeTab === "active" ? activeReminders : upcomingReminders;
+  
+  // Helper to check if a reminder has an in-progress call
+  const isCallInProgress = (reminderId: string) => inProgressReminderIds.has(reminderId);
 
   const formatSchedule = (reminder: typeof reminders[0]) => {
     const date = new Date(reminder.scheduled_at);
@@ -104,11 +117,25 @@ const Home = () => {
                   onClick={() => handleCardClick(reminder)}
                   className="bg-card rounded-lg p-4 card-shadow border border-border flex items-center gap-4 cursor-pointer hover:bg-card/80 transition-colors"
                 >
-                  {/* Avatar */}
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0">
-                    <span className="text-primary font-semibold">
-                      {reminder.recipient_name.charAt(0)}
-                    </span>
+                  {/* Avatar with in-progress indicator */}
+                  <div className="relative">
+                    <div className={cn(
+                      "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0",
+                      isCallInProgress(reminder.id) 
+                        ? "bg-gradient-to-br from-green-500/20 to-green-400/10" 
+                        : "bg-gradient-to-br from-primary/20 to-primary/10"
+                    )}>
+                      {isCallInProgress(reminder.id) ? (
+                        <Phone className="w-5 h-5 text-green-500 animate-pulse" />
+                      ) : (
+                        <span className="text-primary font-semibold">
+                          {reminder.recipient_name.charAt(0)}
+                        </span>
+                      )}
+                    </div>
+                    {isCallInProgress(reminder.id) && (
+                      <span className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full animate-ping" />
+                    )}
                   </div>
 
                   {/* Content */}
@@ -117,7 +144,11 @@ const Home = () => {
                       {reminder.recipient_name}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {formatSchedule(reminder)}
+                      {isCallInProgress(reminder.id) ? (
+                        <span className="text-green-500 font-medium">Call in progress...</span>
+                      ) : (
+                        formatSchedule(reminder)
+                      )}
                     </p>
                   </div>
 
