@@ -24,12 +24,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { CalendarIcon, X, Trash2 } from "lucide-react";
+import { CalendarIcon, X, Trash2, Phone, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { format, setHours, setMinutes } from "date-fns";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useUpdateReminder, useDeleteReminder, Reminder } from "@/hooks/useReminders";
+import { useMakeCall } from "@/hooks/useMakeCall";
 
 interface EditReminderDialogProps {
   open: boolean;
@@ -56,6 +57,7 @@ export const EditReminderDialog = ({
 
   const updateReminder = useUpdateReminder();
   const deleteReminder = useDeleteReminder();
+  const { makeCall, isLoading: isCallingNow } = useMakeCall();
 
   // Initialize form with reminder data
   useEffect(() => {
@@ -147,6 +149,23 @@ export const EditReminderDialog = ({
         description: error instanceof Error ? error.message : "Please try again",
         variant: "destructive" 
       });
+    }
+  };
+
+  const handleTestCall = async () => {
+    if (!reminder) return;
+
+    try {
+      await makeCall({
+        reminderId: reminder.id,
+        recipientName: reminder.recipient_name,
+        phoneNumber: reminder.phone_number,
+        message: reminder.message,
+        voice: reminder.voice,
+      });
+    } catch (error) {
+      // Error toast is already shown by useMakeCall
+      console.error("Test call failed:", error);
     }
   };
 
@@ -328,11 +347,32 @@ export const EditReminderDialog = ({
               </div>
             </div>
 
+            {/* Test Call Button */}
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-12 text-base font-semibold border-primary text-primary hover:bg-primary/5"
+              disabled={isCallingNow || updateReminder.isPending}
+              onClick={handleTestCall}
+            >
+              {isCallingNow ? (
+                <>
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                  Calling...
+                </>
+              ) : (
+                <>
+                  <Phone className="mr-2 h-5 w-5" />
+                  Test Call Now
+                </>
+              )}
+            </Button>
+
             {/* Submit */}
             <Button
               type="submit"
               className="w-full h-12 text-base font-semibold"
-              disabled={updateReminder.isPending}
+              disabled={updateReminder.isPending || isCallingNow}
             >
               {updateReminder.isPending ? "Saving..." : "Save Changes"}
             </Button>
