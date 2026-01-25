@@ -14,6 +14,25 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const CRON_SECRET = Deno.env.get("CRON_SECRET");
+
+    // Authenticate the request - must be a service role call or have valid cron secret
+    const authHeader = req.headers.get("Authorization");
+    const cronSecretHeader = req.headers.get("X-Cron-Secret");
+    
+    // Check if this is a valid service role call
+    const isServiceRoleCall = authHeader === `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`;
+    
+    // Check if this is a valid cron job call (if CRON_SECRET is configured)
+    const isValidCronCall = CRON_SECRET && cronSecretHeader === CRON_SECRET;
+    
+    if (!isServiceRoleCall && !isValidCronCall) {
+      console.error("Unauthorized access attempt to check-reminders");
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     const supabase = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE_KEY!);
 
@@ -42,7 +61,7 @@ serve(async (req) => {
     const results = [];
     for (const reminder of dueReminders || []) {
       try {
-        // Call the make-call function
+        // Call the make-call function with service role auth
         const response = await fetch(`${SUPABASE_URL}/functions/v1/make-call`, {
           method: "POST",
           headers: {
