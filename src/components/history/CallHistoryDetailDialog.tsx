@@ -5,7 +5,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { X, Phone, User, MessageSquare, Calendar, Clock, Globe, CheckCircle, XCircle, Voicemail, AlertTriangle, Loader2, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { toZonedTime } from "date-fns-tz";
@@ -117,7 +116,20 @@ export const CallHistoryDetailDialog = ({
             <DialogTitle className="text-lg font-semibold">
               Call Details
             </DialogTitle>
-            <div className="w-7" /> {/* Spacer for alignment */}
+            {onDuplicate ? (
+              <button
+                onClick={() => {
+                  onDuplicate(callHistory);
+                  onOpenChange(false);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                Duplicate
+              </button>
+            ) : (
+              <div className="w-7" />
+            )}
           </div>
           <DialogDescription className="sr-only">
             Details of the call to {callHistory.recipient_name}
@@ -228,21 +240,6 @@ export const CallHistoryDetailDialog = ({
               {callHistory.message}
             </p>
           </div>
-
-          {/* Duplicate Button */}
-          {onDuplicate && (
-            <Button
-              onClick={() => {
-                onDuplicate(callHistory);
-                onOpenChange(false);
-              }}
-              className="w-full"
-              variant="outline"
-            >
-              <Copy className="h-4 w-4 mr-2" />
-              Duplicate as New Reminder
-            </Button>
-          )}
         </div>
       </DialogContent>
     </Dialog>
