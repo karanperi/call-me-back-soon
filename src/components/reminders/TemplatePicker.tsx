@@ -36,17 +36,14 @@ interface TemplatePickerProps {
 
 export const TemplatePicker = ({ selected, onSelect }: TemplatePickerProps) => {
   return (
-    <div className="px-4 py-3 border-b border-border">
-      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
-        Template
-      </p>
+    <div className="px-4 py-2 border-b border-border">
       <div className="relative">
         {/* Left fade */}
-        <div className="absolute left-0 top-0 bottom-0 w-6 bg-gradient-to-r from-card to-transparent z-10 pointer-events-none" />
+        <div className="absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-card to-transparent z-10 pointer-events-none" />
         
         {/* Scrollable pills */}
         <div 
-          className="flex gap-2 overflow-x-auto px-6 py-1"
+          className="flex gap-2 overflow-x-auto px-4"
           style={{ 
             scrollbarWidth: "none", 
             msOverflowStyle: "none",
@@ -80,7 +77,7 @@ export const TemplatePicker = ({ selected, onSelect }: TemplatePickerProps) => {
         </div>
         
         {/* Right fade */}
-        <div className="absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-card to-transparent z-10 pointer-events-none" />
+        <div className="absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-card to-transparent z-10 pointer-events-none" />
       </div>
       <style>{`
         .flex.overflow-x-auto::-webkit-scrollbar {
