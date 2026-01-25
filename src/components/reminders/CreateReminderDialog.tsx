@@ -14,12 +14,21 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { CalendarIcon, X } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { CalendarIcon, X, Globe } from "lucide-react";
 import { useState } from "react";
-import { format, setHours, setMinutes } from "date-fns";
+import { format } from "date-fns";
+import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useCreateReminder } from "@/hooks/useReminders";
+import { TIMEZONES, getDefaultTimezone } from "@/lib/timezones";
 
 interface CreateReminderDialogProps {
   open: boolean;
@@ -40,6 +49,7 @@ export const CreateReminderDialog = ({
   const [time, setTime] = useState("09:00");
   const [frequency, setFrequency] = useState<Frequency>("once");
   const [voice, setVoice] = useState<Voice>("friendly_female");
+  const [timezone, setTimezone] = useState(getDefaultTimezone());
 
   const createReminder = useCreateReminder();
 
@@ -68,9 +78,13 @@ export const CreateReminderDialog = ({
       return;
     }
 
-    // Combine date and time
+    // Combine date and time in the selected timezone, then convert to UTC
     const [hours, minutes] = time.split(":").map(Number);
-    const scheduledAt = setMinutes(setHours(date, hours), minutes);
+    const localDateTime = new Date(date);
+    localDateTime.setHours(hours, minutes, 0, 0);
+    
+    // Convert from selected timezone to UTC
+    const scheduledAt = fromZonedTime(localDateTime, timezone);
 
     if (scheduledAt <= new Date()) {
       toast({ title: "Scheduled time must be in the future", variant: "destructive" });
@@ -107,7 +121,12 @@ export const CreateReminderDialog = ({
     setTime("09:00");
     setFrequency("once");
     setVoice("friendly_female");
+    setTimezone(getDefaultTimezone());
   };
+
+  // Get start of today for calendar minimum date
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -185,7 +204,7 @@ export const CreateReminderDialog = ({
                       mode="single"
                       selected={date}
                       onSelect={setDate}
-                      disabled={(date) => date < new Date()}
+                      disabled={(d) => d < today}
                       initialFocus
                       className="pointer-events-auto"
                     />
@@ -202,6 +221,27 @@ export const CreateReminderDialog = ({
                 />
               </div>
             </div>
+
+            {/* Timezone Selection */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-1.5">
+                <Globe className="h-3.5 w-3.5" />
+                Timezone
+              </Label>
+              <Select value={timezone} onValueChange={setTimezone}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select timezone" />
+                </SelectTrigger>
+                <SelectContent className="max-h-60 bg-popover">
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz.value} value={tz.value}>
+                      {tz.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="space-y-2">
               <Label>Frequency</Label>
               <div className="flex gap-2">
