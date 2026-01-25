@@ -130,9 +130,14 @@ export type Database = {
           frequency: string
           id: string
           is_active: boolean
+          max_occurrences: number | null
           message: string
           phone_number: string
           recipient_name: string
+          recurrence_day_of_month: number | null
+          recurrence_days_of_week: number[] | null
+          recurrence_interval: number | null
+          recurrence_week_of_month: number | null
           repeat_count: number
           repeat_until: string | null
           scheduled_at: string
@@ -145,9 +150,14 @@ export type Database = {
           frequency?: string
           id?: string
           is_active?: boolean
+          max_occurrences?: number | null
           message: string
           phone_number: string
           recipient_name: string
+          recurrence_day_of_month?: number | null
+          recurrence_days_of_week?: number[] | null
+          recurrence_interval?: number | null
+          recurrence_week_of_month?: number | null
           repeat_count?: number
           repeat_until?: string | null
           scheduled_at: string
@@ -160,9 +170,14 @@ export type Database = {
           frequency?: string
           id?: string
           is_active?: boolean
+          max_occurrences?: number | null
           message?: string
           phone_number?: string
           recipient_name?: string
+          recurrence_day_of_month?: number | null
+          recurrence_days_of_week?: number[] | null
+          recurrence_interval?: number | null
+          recurrence_week_of_month?: number | null
           repeat_count?: number
           repeat_until?: string | null
           scheduled_at?: string
