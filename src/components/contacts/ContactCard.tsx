@@ -7,6 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Contact } from "@/hooks/useContacts";
+import { formatPhoneForDisplay } from "@/lib/phoneUtils";
 
 interface ContactCardProps {
   contact: Contact;
@@ -15,6 +16,8 @@ interface ContactCardProps {
 }
 
 export const ContactCard = ({ contact, onEdit, onDelete }: ContactCardProps) => {
+  const formattedPhone = formatPhoneForDisplay(contact.phone_number);
+
   return (
     <div className="bg-card rounded-lg p-4 card-shadow border border-border flex items-center justify-between">
       <div className="flex items-center gap-3">
@@ -23,7 +26,7 @@ export const ContactCard = ({ contact, onEdit, onDelete }: ContactCardProps) => 
         </div>
         <div>
           <p className="font-medium text-foreground">{contact.name}</p>
-          <p className="text-sm text-muted-foreground">{contact.phone_number}</p>
+          <p className="text-sm text-muted-foreground">{formattedPhone}</p>
         </div>
       </div>
       

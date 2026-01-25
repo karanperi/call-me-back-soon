@@ -32,6 +32,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CalendarIcon, X, Trash2, Phone, Loader2, Globe } from "lucide-react";
+import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
+import { TestCallConfirmation } from "./TestCallConfirmation";
 import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -56,7 +58,8 @@ export const EditReminderDialog = ({
   reminder,
 }: EditReminderDialogProps) => {
   const [recipientName, setRecipientName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("+44 ");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [isPhoneValid, setIsPhoneValid] = useState(false);
   const [message, setMessage] = useState("");
   const [date, setDate] = useState<Date>();
   const [time, setTime] = useState("09:00");
@@ -64,6 +67,7 @@ export const EditReminderDialog = ({
   const [voice, setVoice] = useState<Voice>("friendly_female");
   const [timezone, setTimezone] = useState(getDefaultTimezone());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showTestCallConfirm, setShowTestCallConfirm] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const updateReminder = useUpdateReminder();
@@ -89,11 +93,17 @@ export const EditReminderDialog = ({
     setTimezone(newTimezone);
   };
 
+  const handlePhoneChange = (e164Value: string, isValid: boolean) => {
+    setPhoneNumber(e164Value);
+    setIsPhoneValid(isValid);
+  };
+
   // Initialize form with reminder data
   useEffect(() => {
     if (reminder) {
       setRecipientName(reminder.recipient_name);
       setPhoneNumber(reminder.phone_number);
+      setIsPhoneValid(true); // Existing numbers are assumed valid
       setMessage(reminder.message);
       
       // Convert UTC to local timezone for display
@@ -121,9 +131,8 @@ export const EditReminderDialog = ({
       return;
     }
     
-    const phoneRegex = /^(\+44|0)\s?7\d{3}\s?\d{6}$/;
-    if (!phoneRegex.test(phoneNumber.replace(/\s/g, ""))) {
-      toast({ title: "Please enter a valid UK phone number", variant: "destructive" });
+    if (!isPhoneValid || !phoneNumber) {
+      toast({ title: "Please enter a valid phone number", variant: "destructive" });
       return;
     }
     
@@ -157,7 +166,7 @@ export const EditReminderDialog = ({
       await updateReminder.mutateAsync({
         id: reminder.id,
         recipient_name: recipientName.trim(),
-        phone_number: phoneNumber.replace(/\s/g, ""),
+        phone_number: phoneNumber, // Already in E.164 format
         message: message.trim(),
         scheduled_at: scheduledAt.toISOString(),
         frequency,
@@ -193,17 +202,22 @@ export const EditReminderDialog = ({
     }
   };
 
-  const handleTestCall = async () => {
+  const handleTestCallClick = () => {
+    setShowTestCallConfirm(true);
+  };
+
+  const handleTestCallConfirm = async () => {
     if (!reminder) return;
 
     try {
       await makeCall({
         reminderId: reminder.id,
-        recipientName: reminder.recipient_name,
-        phoneNumber: reminder.phone_number,
-        message: reminder.message,
-        voice: reminder.voice,
+        recipientName: recipientName || reminder.recipient_name,
+        phoneNumber: phoneNumber || reminder.phone_number,
+        message: message || reminder.message,
+        voice: voice || reminder.voice,
       });
+      setShowTestCallConfirm(false);
     } catch (error) {
       // Error toast is already shown by useMakeCall
       console.error("Test call failed:", error);
@@ -255,17 +269,14 @@ export const EditReminderDialog = ({
                   onChange={(e) => setRecipientName(e.target.value)}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="editPhoneNumber">Phone Number</Label>
-                <Input
-                  id="editPhoneNumber"
-                  type="tel"
-                  placeholder="+44 7700 000000"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                />
-              </div>
-            </div>
+            <InternationalPhoneInput
+              id="editPhoneNumber"
+              value={phoneNumber}
+              onChange={handlePhoneChange}
+              label="Phone Number"
+              showCostEstimate={true}
+            />
+          </div>
 
             {/* Schedule */}
             <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
@@ -421,20 +432,11 @@ export const EditReminderDialog = ({
               type="button"
               variant="outline"
               className="w-full h-12 text-base font-semibold border-primary text-primary hover:bg-primary/5"
-              disabled={isCallingNow || updateReminder.isPending}
-              onClick={handleTestCall}
+              disabled={isCallingNow || updateReminder.isPending || !isPhoneValid}
+              onClick={handleTestCallClick}
             >
-              {isCallingNow ? (
-                <>
-                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-                  Calling...
-                </>
-              ) : (
-                <>
-                  <Phone className="mr-2 h-5 w-5" />
-                  Test Call Now
-                </>
-              )}
+              <Phone className="mr-2 h-5 w-5" />
+              Test Call Now
             </Button>
 
             {/* Submit */}
@@ -470,6 +472,17 @@ export const EditReminderDialog = ({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Test Call Confirmation Dialog */}
+      <TestCallConfirmation
+        open={showTestCallConfirm}
+        onOpenChange={setShowTestCallConfirm}
+        onConfirm={handleTestCallConfirm}
+        recipientName={recipientName || reminder.recipient_name}
+        phoneNumber={phoneNumber || reminder.phone_number}
+        voice={voice || reminder.voice}
+        isLoading={isCallingNow}
+      />
     </>
   );
 };

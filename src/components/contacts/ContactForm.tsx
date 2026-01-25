@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { useCreateContact, useUpdateContact, Contact } from "@/hooks/useContacts";
 import { toast } from "@/hooks/use-toast";
 
@@ -21,6 +21,7 @@ interface ContactFormProps {
 export const ContactForm = ({ open, onOpenChange, contact }: ContactFormProps) => {
   const [name, setName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [isPhoneValid, setIsPhoneValid] = useState(false);
   
   const createContact = useCreateContact();
   const updateContact = useUpdateContact();
@@ -31,24 +32,17 @@ export const ContactForm = ({ open, onOpenChange, contact }: ContactFormProps) =
     if (contact) {
       setName(contact.name);
       setPhoneNumber(contact.phone_number);
+      setIsPhoneValid(true); // Existing numbers are assumed valid
     } else {
       setName("");
       setPhoneNumber("");
+      setIsPhoneValid(false);
     }
   }, [contact, open]);
 
-  const normalizePhoneNumber = (phone: string): string => {
-    // Remove all non-digit characters except +
-    let cleaned = phone.replace(/[^\d+]/g, "");
-    
-    // Convert UK formats to E.164
-    if (cleaned.startsWith("07")) {
-      cleaned = "+44" + cleaned.substring(1);
-    } else if (cleaned.startsWith("447")) {
-      cleaned = "+" + cleaned;
-    }
-    
-    return cleaned;
+  const handlePhoneChange = (e164Value: string, isValid: boolean) => {
+    setPhoneNumber(e164Value);
+    setIsPhoneValid(isValid);
   };
 
   const validateForm = (): boolean => {
@@ -61,12 +55,10 @@ export const ContactForm = ({ open, onOpenChange, contact }: ContactFormProps) =
       return false;
     }
 
-    const ukPhoneRegex = /^(\+44|0)7\d{9}$/;
-    const normalizedPhone = normalizePhoneNumber(phoneNumber);
-    if (!ukPhoneRegex.test(normalizedPhone) && !ukPhoneRegex.test(phoneNumber)) {
+    if (!isPhoneValid || !phoneNumber) {
       toast({
         title: "Invalid phone number",
-        description: "Please enter a valid UK phone number",
+        description: "Please enter a valid phone number",
         variant: "destructive",
       });
       return false;
@@ -80,20 +72,18 @@ export const ContactForm = ({ open, onOpenChange, contact }: ContactFormProps) =
     
     if (!validateForm()) return;
 
-    const normalizedPhone = normalizePhoneNumber(phoneNumber);
-
     try {
       if (isEditing && contact) {
         await updateContact.mutateAsync({
           id: contact.id,
           name: name.trim(),
-          phone_number: normalizedPhone,
+          phone_number: phoneNumber, // Already in E.164 format
         });
         toast({ title: "Contact updated successfully" });
       } else {
         await createContact.mutateAsync({
           name: name.trim(),
-          phone_number: normalizedPhone,
+          phone_number: phoneNumber, // Already in E.164 format
         });
         toast({ title: "Contact saved successfully" });
       }
@@ -128,16 +118,13 @@ export const ContactForm = ({ open, onOpenChange, contact }: ContactFormProps) =
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="contact-phone">Phone Number</Label>
-            <Input
-              id="contact-phone"
-              type="tel"
-              placeholder="+44 7700 000 000"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-            />
-          </div>
+          <InternationalPhoneInput
+            id="contact-phone"
+            value={phoneNumber}
+            onChange={handlePhoneChange}
+            label="Phone Number"
+            showCostEstimate={false}
+          />
 
           <div className="flex justify-end pt-2">
             <Button type="submit" disabled={isPending}>

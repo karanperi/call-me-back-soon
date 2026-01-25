@@ -11,6 +11,7 @@ import { toZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
 import { Tables } from "@/integrations/supabase/types";
 import { getDefaultTimezone } from "@/lib/timezones";
+import { formatPhoneForDisplay } from "@/lib/phoneUtils";
 
 type CallHistory = Tables<"call_history">;
 
@@ -129,7 +130,7 @@ export const CallHistoryDetailDialog = ({
               </div>
               <div>
                 <p className="font-medium text-foreground">{callHistory.recipient_name}</p>
-                <p className="text-sm text-muted-foreground">{callHistory.phone_number}</p>
+                <p className="text-sm text-muted-foreground">{formatPhoneForDisplay(callHistory.phone_number)}</p>
               </div>
             </div>
           </div>
