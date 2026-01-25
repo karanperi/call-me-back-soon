@@ -59,22 +59,33 @@ export const InternationalPhoneInput = ({
   const [isValid, setIsValid] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
 
-  // Initialize local number from value (for editing existing numbers)
+  // Initialize/update local number from value prop (for editing or contact selection)
   useEffect(() => {
     if (value && value.startsWith("+")) {
       const parsed = parseInternationalNumber(value);
       if (parsed) {
         const country = getCountryByCode(parsed.countryCode);
         if (country) {
-          setSelectedCountry(country);
-          setLocalNumber(parsed.nationalNumber);
-          // Validate the parsed number
-          const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
-          setIsValid(validation.isValid);
+          // Check if we already have this value to prevent loops
+          const currentValidation = validatePhoneNumber(localNumber, selectedCountry.code as CountryCode);
+          const currentE164 = currentValidation.e164;
+          
+          // Only update if the value actually changed from external source
+          if (value !== currentE164) {
+            setSelectedCountry(country);
+            setLocalNumber(parsed.nationalNumber);
+            const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
+            setIsValid(validation.isValid);
+          }
         }
       }
+    } else if (value === "" && localNumber !== "") {
+      // Handle reset case (when form is cleared)
+      setLocalNumber("");
+      setIsValid(false);
+      setValidationError(undefined);
     }
-  }, []);
+  }, [value]);
 
   // Validate and update parent when local number or country changes
   const validateAndUpdate = useCallback(
