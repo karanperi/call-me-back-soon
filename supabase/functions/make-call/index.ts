@@ -54,7 +54,7 @@ serve(async (req) => {
 
     // Map voice selection to ElevenLabs voice IDs
     const voiceMap: Record<string, string> = {
-      friendly_female: "21m00Tcm4TlvDq8ikWAM", // Rachel
+      friendly_female: "caMurMrvWp0v3NFJALhl", // Custom female voice
       friendly_male: "VR6AewLTigWG4xSOukaG",   // Josh
     };
 
