@@ -32,8 +32,8 @@ serve(async (req) => {
       .lte("scheduled_at", now.toISOString());
 
     if (error) {
-      console.error("Error fetching reminders:", error);
-      throw error;
+      console.error("Database query error:", error);
+      throw new Error("reminder_query_failed");
     }
 
     console.log(`Found ${dueReminders?.length || 0} due reminders`);
@@ -60,7 +60,7 @@ serve(async (req) => {
         });
 
         const result = await response.json();
-        results.push({ reminderId: reminder.id, success: response.ok, result });
+        results.push({ reminderId: reminder.id, success: response.ok });
 
         // Handle recurring reminders
         if (reminder.frequency !== "once" && reminder.repeat_count < 30) {
@@ -94,22 +94,20 @@ serve(async (req) => {
         }
 
       } catch (callError: unknown) {
-        const errorMessage = callError instanceof Error ? callError.message : "Unknown error";
         console.error(`Error processing reminder ${reminder.id}:`, callError);
-        results.push({ reminderId: reminder.id, success: false, error: errorMessage });
+        results.push({ reminderId: reminder.id, success: false });
       }
     }
 
     return new Response(
-      JSON.stringify({ success: true, processed: results.length, results }),
+      JSON.stringify({ success: true, processed: results.length }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
   } catch (error: unknown) {
-    const errorMessage = error instanceof Error ? error.message : "Internal server error";
     console.error("Error in check-reminders function:", error);
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ error: "Failed to process reminders" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
