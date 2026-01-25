@@ -1,83 +1,60 @@
 
-# Fix: Phone Number Validation State Not Syncing to Parent
+# Fix: Call History Not Recording Failed Calls
 
-## Problem Identified
+## Root Cause
 
-When a contact is selected from the contact picker, the `InternationalPhoneInput` component correctly parses and validates the phone number internally, but it **never notifies the parent component** that the phone number is valid.
+The `call_history` table has a database constraint that only allows these status values:
+- `completed`, `missed`, `voicemail`, `failed`
 
-**The bug is in the `useEffect` hook (lines 63-90) of `InternationalPhoneInput.tsx`:**
+However, the `make-call` edge function attempts to insert records with status **`pending`** and **`in_progress`**, which are **not allowed** by this constraint.
 
-```javascript
-// This code sets internal state...
-setIsValid(validation.isValid);
-setValidationError(validation.isValid ? undefined : validation.error);
-// ...but never calls onChange() to tell the parent!
-```
-
-**Result:**
-- Component's internal `isValid` = `true` (cost estimate shows)
-- Parent's `isPhoneValid` = `false` (never updated)
-- Form submission fails validation
+**Result:** The initial insert fails silently, so when the call subsequently fails, there's no history record to update - hence failed calls are not appearing in the History screen.
 
 ---
 
 ## Solution
 
-Add an `onChange` call in the `useEffect` to sync the validation state with the parent component when a contact is selected.
-
-**File to Modify:** `src/components/phone/InternationalPhoneInput.tsx`
-
-**Change:** After validating the incoming phone number in the `useEffect`, call `onChange` with the E.164 value and validity status.
+Update the database constraint to include the two missing status values: `pending` and `in_progress`.
 
 ---
 
-## Technical Details
+## Technical Changes
 
-### Current Code (lines 74-81)
+### Database Migration
 
-```javascript
-if (value !== currentE164) {
-  setSelectedCountry(country);
-  setLocalNumber(parsed.nationalNumber);
-  const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
-  setIsValid(validation.isValid);
-  setValidationError(validation.isValid ? undefined : validation.error);
-}
-```
+Drop the existing check constraint and recreate it with the additional status values:
 
-### Updated Code
+```sql
+-- Drop the existing constraint
+ALTER TABLE call_history DROP CONSTRAINT IF EXISTS call_history_status_check;
 
-```javascript
-if (value !== currentE164) {
-  setSelectedCountry(country);
-  setLocalNumber(parsed.nationalNumber);
-  const validation = validatePhoneNumber(parsed.nationalNumber, parsed.countryCode);
-  setIsValid(validation.isValid);
-  setValidationError(validation.isValid ? undefined : validation.error);
-  
-  // Notify parent of the validated value
-  if (validation.isValid && validation.e164) {
-    onChange(validation.e164, true);
-  }
-}
+-- Add updated constraint with all valid statuses
+ALTER TABLE call_history ADD CONSTRAINT call_history_status_check 
+CHECK (status = ANY (ARRAY['pending', 'in_progress', 'completed', 'missed', 'voicemail', 'failed']));
 ```
 
 ---
 
-## Why This Fixes the Issue
+## Status Flow After Fix
 
-1. When a contact is selected, the parent sets `phoneNumber` to the E.164 value
-2. The `useEffect` detects the value change and parses it
-3. After validation, it now calls `onChange(e164, true)` 
-4. The parent's `handlePhoneChange` updates `isPhoneValid` to `true`
-5. Form submission validation passes
+```text
+[pending] --> [in_progress] --> [completed] (success)
+                           \--> [failed] (error)
+                           \--> [missed] (no answer)
+                           \--> [voicemail]
+```
+
+---
+
+## Why This Was Missed
+
+The edge function was updated to use a "create first, update later" pattern with `pending` status, but the database constraint wasn't updated to allow these new status values.
 
 ---
 
 ## Testing
 
-After the fix, verify:
-1. Select a contact - phone should populate AND form should submit successfully
-2. Select different contacts - should work each time
-3. Manual entry - should still work as before
-4. Paste international number - should still work as before
+After the fix:
+1. Create a reminder with an invalid phone number
+2. Wait for the scheduled time
+3. Check History > Failed tab - the failed call should now appear with the error message
