@@ -77,13 +77,19 @@ serve(async (req) => {
       params[key] = value.toString();
     });
 
-    // Get the full URL that Twilio used (including any query params)
-    const url = req.url;
+    // IMPORTANT: req.url returns the internal URL, but Twilio signed using the public URL.
+    // We must reconstruct the public URL that Twilio actually called.
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const publicUrl = `${supabaseUrl}/functions/v1/twilio-status-callback`;
+    
+    console.log(`Validating signature for URL: ${publicUrl}`);
 
-    // Validate the signature
-    const isValid = await validateTwilioSignature(authToken, twilioSignature, url, params);
+    // Validate the signature using the public URL
+    const isValid = await validateTwilioSignature(authToken, twilioSignature, publicUrl, params);
     if (!isValid) {
       console.error("Invalid Twilio signature - rejecting request");
+      console.error(`req.url was: ${req.url}`);
+      console.error(`Public URL used: ${publicUrl}`);
       return new Response("Unauthorized", { status: 401 });
     }
 
