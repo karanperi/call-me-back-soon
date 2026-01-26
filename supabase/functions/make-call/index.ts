@@ -205,7 +205,7 @@ serve(async (req) => {
     console.log(`Generating speech for reminder ${reminderId}...`);
 
     const elevenLabsResponse = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_22050_32`,
       {
         method: "POST",
         headers: {
