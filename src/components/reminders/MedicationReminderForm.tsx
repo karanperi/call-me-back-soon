@@ -406,7 +406,7 @@ export const MedicationReminderForm = ({
       <div className="h-20" />
 
       {/* Sticky Submit Button */}
-      <div className="sticky bottom-0 left-0 right-0 p-4 -mx-4 -mb-4 bg-background border-t border-border">
+      <div className="sticky bottom-0 left-0 right-0 pt-4 pb-4 bg-background border-t border-border">
         <Button
           type="submit"
           className="w-full h-12 text-base font-semibold"
