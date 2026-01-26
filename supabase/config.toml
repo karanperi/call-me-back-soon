@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.twilio-status-callback]
 verify_jwt = false
+
+[functions.create-voice-clone]
+verify_jwt = false
+
+[functions.preview-voice]
+verify_jwt = false
+
+[functions.delete-voice-clone]
+verify_jwt = false

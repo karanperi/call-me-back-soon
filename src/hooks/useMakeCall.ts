@@ -8,6 +8,7 @@ interface MakeCallParams {
   phoneNumber: string;
   message: string;
   voice: string;
+  customVoiceId?: string | null;
 }
 
 export const useMakeCall = () => {
