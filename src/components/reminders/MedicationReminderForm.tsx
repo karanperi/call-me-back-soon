@@ -20,6 +20,7 @@ import { ContactPickerIcon } from "@/components/contacts/ContactPickerIcon";
 import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { MessagePreview } from "./MessagePreview";
 import { MedicationList } from "./MedicationList";
+import { VoiceSelector, VoiceType } from "@/components/voices/VoiceSelector";
 import { format, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
@@ -35,7 +36,7 @@ import {
 } from "@/lib/medicationUtils";
 import { ReminderInsert } from "@/hooks/useReminders";
 
-type Voice = "friendly_female" | "friendly_male";
+type Voice = VoiceType;
 
 interface MedicationReminderFormProps {
   onSubmit: (reminders: Omit<ReminderInsert, "user_id">[]) => Promise<void>;
@@ -73,6 +74,7 @@ export const MedicationReminderForm = ({
   const [repeat, setRepeat] = useState<RepeatKey>("daily");
   const [date, setDate] = useState<Date | undefined>(defaultDateTime.date);
   const [voice, setVoice] = useState<Voice>("friendly_female");
+  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   
   // Message state
@@ -132,6 +134,11 @@ export const MedicationReminderForm = ({
     setIsPhoneValid(isValid);
   };
 
+  const handleVoiceSelect = (selectedVoice: VoiceType, selectedCustomVoiceId?: string) => {
+    setVoice(selectedVoice);
+    setCustomVoiceId(selectedCustomVoiceId || null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -189,6 +196,7 @@ export const MedicationReminderForm = ({
         scheduled_at: scheduledAt.toISOString(),
         frequency,
         voice,
+        custom_voice_id: voice === "custom" ? customVoiceId : null,
       };
     });
 
@@ -420,39 +428,11 @@ export const MedicationReminderForm = ({
 
       {/* Voice Selection */}
       <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-          Voice
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={() => setVoice("friendly_female")}
-            className={cn(
-              "p-4 rounded-lg border-2 transition-all text-left",
-              voice === "friendly_female"
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-primary/50"
-            )}
-          >
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-200 to-purple-200 mb-2" />
-            <p className="font-medium text-sm">Friendly Female</p>
-            <p className="text-xs text-muted-foreground">Warm & Clear</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setVoice("friendly_male")}
-            className={cn(
-              "p-4 rounded-lg border-2 transition-all text-left",
-              voice === "friendly_male"
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-primary/50"
-            )}
-          >
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-200 to-cyan-200 mb-2" />
-            <p className="font-medium text-sm">Friendly Male</p>
-            <p className="text-xs text-muted-foreground">Calm & Professional</p>
-          </button>
-        </div>
+        <VoiceSelector
+          selectedVoice={voice}
+          customVoiceId={customVoiceId}
+          onSelect={handleVoiceSelect}
+        />
       </div>
 
       {/* Spacer for sticky button */}

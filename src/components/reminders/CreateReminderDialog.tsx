@@ -28,6 +28,7 @@ import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneIn
 import { FrequencyPicker } from "./FrequencyPicker";
 import { TemplatePicker, TemplateType } from "./TemplatePicker";
 import { MedicationReminderForm } from "./MedicationReminderForm";
+import { VoiceSelector, VoiceType } from "@/components/voices/VoiceSelector";
 import { format, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { cn } from "@/lib/utils";
@@ -49,7 +50,7 @@ interface CreateReminderDialogProps {
   initialData?: InitialReminderData;
 }
 
-type Voice = "friendly_female" | "friendly_male";
+type Voice = VoiceType;
 
 export const CreateReminderDialog = ({
   open,
@@ -82,6 +83,7 @@ export const CreateReminderDialog = ({
     getDefaultConfig("once", defaultDateTime.date)
   );
   const [voice, setVoice] = useState<Voice>("friendly_female");
+  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [timezone, setTimezone] = useState(defaultTz);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
@@ -177,6 +179,7 @@ export const CreateReminderDialog = ({
         repeat_until: dbFields.repeat_until,
         max_occurrences: dbFields.max_occurrences,
         voice,
+        custom_voice_id: voice === "custom" ? customVoiceId : null,
       });
 
       toast({ title: "Reminder created successfully!" });
@@ -224,7 +227,13 @@ export const CreateReminderDialog = ({
     setTime(newDefaults.time);
     setFrequencyConfig(getDefaultConfig("once", newDefaults.date));
     setVoice("friendly_female");
+    setCustomVoiceId(null);
     setTimezone(newTz);
+  };
+
+  const handleVoiceSelect = (selectedVoice: VoiceType, selectedCustomVoiceId?: string) => {
+    setVoice(selectedVoice);
+    setCustomVoiceId(selectedCustomVoiceId || null);
   };
 
   // Get start of today for calendar minimum date
@@ -392,39 +401,11 @@ export const CreateReminderDialog = ({
 
             {/* Voice Selection */}
             <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Voice
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setVoice("friendly_female")}
-                  className={cn(
-                    "p-4 rounded-lg border-2 transition-all text-left",
-                    voice === "friendly_female"
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
-                  )}
-                >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-200 to-purple-200 mb-2" />
-                  <p className="font-medium text-sm">Friendly Female</p>
-                  <p className="text-xs text-muted-foreground">Warm & Clear</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVoice("friendly_male")}
-                  className={cn(
-                    "p-4 rounded-lg border-2 transition-all text-left",
-                    voice === "friendly_male"
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
-                  )}
-                >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-200 to-cyan-200 mb-2" />
-                  <p className="font-medium text-sm">Friendly Male</p>
-                  <p className="text-xs text-muted-foreground">Calm & Professional</p>
-                </button>
-              </div>
+              <VoiceSelector
+                selectedVoice={voice}
+                customVoiceId={customVoiceId}
+                onSelect={handleVoiceSelect}
+              />
             </div>
 
             {/* Submit */}

@@ -35,6 +35,7 @@ import { CalendarIcon, X, Trash2, Phone, Loader2, Globe } from "lucide-react";
 import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { TestCallConfirmation } from "./TestCallConfirmation";
 import { FrequencyPicker } from "./FrequencyPicker";
+import { VoiceSelector, VoiceType } from "@/components/voices/VoiceSelector";
 import { useState, useEffect } from "react";
 import { format, getDay } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -51,7 +52,7 @@ interface EditReminderDialogProps {
   reminder: Reminder | null;
 }
 
-type Voice = "friendly_female" | "friendly_male";
+type Voice = VoiceType;
 
 export const EditReminderDialog = ({
   open,
@@ -68,6 +69,7 @@ export const EditReminderDialog = ({
     getDefaultConfig("once", new Date())
   );
   const [voice, setVoice] = useState<Voice>("friendly_female");
+  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [timezone, setTimezone] = useState(getDefaultTimezone());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTestCallConfirm, setShowTestCallConfirm] = useState(false);
@@ -101,6 +103,11 @@ export const EditReminderDialog = ({
     setIsPhoneValid(isValid);
   };
 
+  const handleVoiceSelect = (selectedVoice: VoiceType, selectedCustomVoiceId?: string) => {
+    setVoice(selectedVoice);
+    setCustomVoiceId(selectedCustomVoiceId || null);
+  };
+
   // Initialize form with reminder data
   useEffect(() => {
     if (reminder) {
@@ -130,6 +137,7 @@ export const EditReminderDialog = ({
       });
       setFrequencyConfig(config);
       setVoice(reminder.voice as Voice);
+      setCustomVoiceId((reminder as any).custom_voice_id || null);
     }
   }, [reminder]);
 
@@ -191,6 +199,7 @@ export const EditReminderDialog = ({
         repeat_until: dbFields.repeat_until,
         max_occurrences: dbFields.max_occurrences,
         voice,
+        custom_voice_id: voice === "custom" ? customVoiceId : null,
         is_active: shouldActivate ? true : reminder.is_active,
       });
 
@@ -397,39 +406,11 @@ export const EditReminderDialog = ({
 
             {/* Voice Selection */}
             <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Voice
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setVoice("friendly_female")}
-                  className={cn(
-                    "p-4 rounded-lg border-2 transition-all text-left",
-                    voice === "friendly_female"
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
-                  )}
-                >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-200 to-purple-200 mb-2" />
-                  <p className="font-medium text-sm">Friendly Female</p>
-                  <p className="text-xs text-muted-foreground">Warm & Clear</p>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVoice("friendly_male")}
-                  className={cn(
-                    "p-4 rounded-lg border-2 transition-all text-left",
-                    voice === "friendly_male"
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50"
-                  )}
-                >
-                  <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-200 to-cyan-200 mb-2" />
-                  <p className="font-medium text-sm">Friendly Male</p>
-                  <p className="text-xs text-muted-foreground">Calm & Professional</p>
-                </button>
-              </div>
+              <VoiceSelector
+                selectedVoice={voice}
+                customVoiceId={customVoiceId}
+                onSelect={handleVoiceSelect}
+              />
             </div>
 
             {/* Test Call Button */}

@@ -1,12 +1,15 @@
 import { useState } from "react";
-import { Search, Play, Mic2 } from "lucide-react";
+import { Search, Mic2, Mic, Plus } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useProfile, useUpdateProfile } from "@/hooks/useProfile";
+import { useUserVoice } from "@/hooks/useUserVoice";
+import { UserVoiceCard } from "@/components/voices/UserVoiceCard";
+import { VoiceRecordingDialog } from "@/components/voices/VoiceRecordingDialog";
 
-type Voice = "friendly_female" | "friendly_male";
+type Voice = "friendly_female" | "friendly_male" | "custom";
 
 interface VoiceOption {
   id: Voice;
@@ -15,7 +18,7 @@ interface VoiceOption {
   gradient: string;
 }
 
-const voices: VoiceOption[] = [
+const AI_VOICES: VoiceOption[] = [
   {
     id: "friendly_female",
     name: "Friendly Female",
@@ -31,9 +34,11 @@ const voices: VoiceOption[] = [
 ];
 
 const Voices = () => {
-  const { data: profile, isLoading } = useProfile();
+  const { data: profile, isLoading: isProfileLoading } = useProfile();
+  const { data: userVoice, isLoading: isVoiceLoading, refetch: refetchVoice } = useUserVoice();
   const updateProfile = useUpdateProfile();
   const [filter] = useState("all");
+  const [showRecordingDialog, setShowRecordingDialog] = useState(false);
 
   const activeVoice = (profile?.default_voice as Voice) || "friendly_female";
 
@@ -49,7 +54,9 @@ const Voices = () => {
       await updateProfile.mutateAsync({ default_voice: voiceId });
       toast({
         title: "Default voice updated",
-        description: `${voices.find((v) => v.id === voiceId)?.name} is now your default`,
+        description: voiceId === "custom" 
+          ? `${userVoice?.name} is now your default`
+          : `${AI_VOICES.find((v) => v.id === voiceId)?.name} is now your default`,
       });
     } catch (error) {
       toast({
@@ -59,7 +66,13 @@ const Voices = () => {
     }
   };
 
-  const activeVoiceData = voices.find((v) => v.id === activeVoice);
+  const handleRecordingSuccess = () => {
+    refetchVoice();
+    // Automatically select the custom voice as default
+    handleSelectVoice("custom");
+  };
+
+  const isLoading = isProfileLoading || isVoiceLoading;
 
   if (isLoading) {
     return (
@@ -103,13 +116,45 @@ const Voices = () => {
           ))}
         </div>
 
-        {/* Available voices */}
+        {/* MY VOICES section */}
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-          Available Voices
+          My Voices
+        </p>
+
+        {userVoice ? (
+          <div className="mb-6">
+            <UserVoiceCard
+              voice={userVoice}
+              isSelected={activeVoice === "custom"}
+              onSelect={() => handleSelectVoice("custom")}
+              onRetry={() => setShowRecordingDialog(true)}
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowRecordingDialog(true)}
+            className="w-full mb-6 p-6 rounded-lg border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 transition-colors text-center group"
+          >
+            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-secondary flex items-center justify-center group-hover:bg-primary/10 transition-colors">
+              <div className="relative">
+                <Mic className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
+                <Plus className="w-4 h-4 absolute -bottom-1 -right-1 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
+            </div>
+            <p className="font-medium text-foreground mb-1">Add Your Voice</p>
+            <p className="text-sm text-muted-foreground">
+              Record your voice to make reminders more personal
+            </p>
+          </button>
+        )}
+
+        {/* AI VOICES section */}
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
+          AI Voices
         </p>
 
         <div className="grid grid-cols-2 gap-3">
-          {voices.map((voice) => (
+          {AI_VOICES.map((voice) => (
             <div
               key={voice.id}
               className={cn(
@@ -131,7 +176,13 @@ const Voices = () => {
                     onClick={handlePlayPreview}
                     className="absolute -bottom-1 -right-1 w-8 h-8 bg-primary rounded-full flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors"
                   >
-                    <Play className="w-4 h-4 text-primary-foreground ml-0.5" />
+                    <svg
+                      className="w-4 h-4 text-primary-foreground ml-0.5"
+                      fill="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
                   </button>
                 </div>
                 <p className="font-medium text-foreground text-sm mb-0.5">
@@ -154,6 +205,12 @@ const Voices = () => {
           ))}
         </div>
       </div>
+
+      <VoiceRecordingDialog
+        open={showRecordingDialog}
+        onOpenChange={setShowRecordingDialog}
+        onSuccess={handleRecordingSuccess}
+      />
     </div>
   );
 };

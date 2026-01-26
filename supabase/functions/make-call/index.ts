@@ -11,13 +11,14 @@ interface ReminderPayload {
   recipientName: string;
   phoneNumber: string;
   message: string;
-  voice: "friendly_female" | "friendly_male";
+  voice: "friendly_female" | "friendly_male" | "custom";
+  customVoiceId?: string;
   userId: string;
   isServiceCall?: boolean;
 }
 
 // Input validation constants
-const VALID_VOICES = ["friendly_female", "friendly_male"];
+const VALID_VOICES = ["friendly_female", "friendly_male", "custom"];
 // E.164 format: + followed by 7-15 digits (covers all international numbers)
 const E164_PHONE_REGEX = /^\+[1-9]\d{6,14}$/;
 const MAX_MESSAGE_LENGTH = 500;
@@ -86,7 +87,7 @@ serve(async (req) => {
     }
 
     const payload: ReminderPayload = await req.json();
-    const { reminderId, recipientName, phoneNumber, message, voice, userId } = payload;
+    const { reminderId, recipientName, phoneNumber, message, voice, userId, customVoiceId } = payload;
 
     // Validate required fields
     if (!reminderId || !recipientName || !phoneNumber || !message || !userId) {
@@ -201,7 +202,30 @@ serve(async (req) => {
       friendly_male: "VR6AewLTigWG4xSOukaG",
     };
 
-    const voiceId = voiceMap[voice] || voiceMap.friendly_female;
+    let voiceId = voiceMap[voice] || voiceMap.friendly_female;
+
+    // Handle custom voice: look up the elevenlabs_voice_id from user_voices
+    if (voice === "custom" && customVoiceId) {
+      const { data: customVoiceData, error: customVoiceError } = await supabase
+        .from("user_voices")
+        .select("elevenlabs_voice_id, status")
+        .eq("id", customVoiceId)
+        .single();
+
+      // Type assertion for the custom voice data
+      const voiceData = customVoiceData as { elevenlabs_voice_id: string; status: string } | null;
+
+      if (customVoiceError || !voiceData) {
+        console.warn("Custom voice not found, falling back to friendly_female:", customVoiceError);
+        voiceId = voiceMap.friendly_female;
+      } else if (voiceData.status !== "ready") {
+        console.warn("Custom voice not ready, falling back to friendly_female");
+        voiceId = voiceMap.friendly_female;
+      } else {
+        voiceId = voiceData.elevenlabs_voice_id;
+        console.log(`Using custom voice: ${voiceId}`);
+      }
+    }
 
     console.log(`Generating speech for reminder ${reminderId}...`);
 

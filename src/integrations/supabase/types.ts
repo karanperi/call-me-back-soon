@@ -127,6 +127,7 @@ export type Database = {
       reminders: {
         Row: {
           created_at: string
+          custom_voice_id: string | null
           frequency: string
           id: string
           is_active: boolean
@@ -147,6 +148,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          custom_voice_id?: string | null
           frequency?: string
           id?: string
           is_active?: boolean
@@ -167,6 +169,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          custom_voice_id?: string | null
           frequency?: string
           id?: string
           is_active?: boolean
@@ -184,6 +187,47 @@ export type Database = {
           updated_at?: string
           user_id?: string
           voice?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reminders_custom_voice_id_fkey"
+            columns: ["custom_voice_id"]
+            isOneToOne: false
+            referencedRelation: "user_voices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_voices: {
+        Row: {
+          created_at: string
+          elevenlabs_voice_id: string
+          error_message: string | null
+          id: string
+          name: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          elevenlabs_voice_id: string
+          error_message?: string | null
+          id?: string
+          name: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          elevenlabs_voice_id?: string
+          error_message?: string | null
+          id?: string
+          name?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
         }
         Relationships: []
       }
