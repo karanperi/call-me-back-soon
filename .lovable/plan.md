@@ -1,115 +1,98 @@
 
-# Fix: International Phone Number Validation in Backend
+
+# Fix: Call Card Disappearing During In-Progress Calls
 
 ## Problem
 
-The `make-call` edge function rejects all non-UK phone numbers due to a hardcoded UK-only regex validation, despite the frontend supporting international numbers.
-
-**Error message**: "Invalid UK phone number format. Expected: +447XXXXXXXXX"
+When a call is in progress, the reminder card disappears from the Active reminders screen instead of updating to show "Call in progress" status. The card only reappears after a page refresh.
 
 ## Root Cause
 
-```typescript
-// Lines 21 and 155-164 in make-call/index.ts
-const UK_PHONE_REGEX = /^\+447\d{9}$/;  // Only accepts UK mobile numbers
+The `useCallHistory` hook lacks automatic refetching, while `useReminders` refreshes every 2 seconds:
 
-if (!UK_PHONE_REGEX.test(phoneNumber)) {
-  // Rejects ALL non-UK numbers including India (+91...)
-}
+```text
+┌──────────────────────────────────────────────────────────────┐
+│                  Current State                                │
+├──────────────────────────────────────────────────────────────┤
+│  useReminders     → refetchInterval: 2000ms ✅                │
+│  useCallHistory   → refetchInterval: NONE  ❌                 │
+└──────────────────────────────────────────────────────────────┘
 ```
+
+**What happens:**
+1. Call is triggered → call_history record created with status "in_progress"
+2. For one-time reminders, `is_active` is set to `false`
+3. `useReminders` refetches → sees `is_active: false`
+4. Filtering logic: `r.is_active || inProgressReminderIds.has(r.id)`
+5. But `inProgressReminderIds` is empty (no refetch occurred!)
+6. Card disappears from the active list
 
 ---
 
 ## Solution
 
-Replace the UK-only regex with a general E.164 international phone number validation that:
-1. Accepts any valid E.164 format (`+` followed by 7-15 digits)
-2. Validates the number starts with a proper country code
-3. Relies on the frontend's comprehensive `libphonenumber-js` validation for country-specific rules
+Add `refetchInterval: 2000` to `useCallHistory` hook to keep call statuses in sync with the UI.
 
 ---
 
 ## Changes Required
 
-### File: `supabase/functions/make-call/index.ts`
+### File: `src/hooks/useCallHistory.ts`
 
-#### Change 1: Update validation constant (line 21)
-
-**Current:**
+**Current code (lines 13-39):**
 ```typescript
-const UK_PHONE_REGEX = /^\+447\d{9}$/;
+return useQuery({
+  queryKey: ["call_history", user?.id, filter],
+  queryFn: async () => {
+    // ... query logic
+  },
+  enabled: !!user,
+});
 ```
 
-**New:**
+**Updated code:**
 ```typescript
-// E.164 format: + followed by 7-15 digits (covers all international numbers)
-const E164_PHONE_REGEX = /^\+[1-9]\d{6,14}$/;
-```
-
-#### Change 2: Update validation logic (lines 155-164)
-
-**Current:**
-```typescript
-// Input validation - Phone number format (UK)
-if (!UK_PHONE_REGEX.test(phoneNumber)) {
-  await updateHistoryStatus("failed", "Invalid UK phone number format. Expected: +447XXXXXXXXX");
-  return new Response(
-    JSON.stringify({ error: "Invalid UK phone number format. Expected: +447XXXXXXXXX" }),
-    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
-}
-```
-
-**New:**
-```typescript
-// Input validation - Phone number format (E.164 international)
-if (!E164_PHONE_REGEX.test(phoneNumber)) {
-  await updateHistoryStatus("failed", "Invalid phone number format. Expected international format: +[country code][number]");
-  return new Response(
-    JSON.stringify({ error: "Invalid phone number format. Expected international format: +[country code][number]" }),
-    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
-}
+return useQuery({
+  queryKey: ["call_history", user?.id, filter],
+  queryFn: async () => {
+    // ... query logic (unchanged)
+  },
+  enabled: !!user,
+  refetchInterval: 2000, // Auto-refresh every 2 seconds to catch status changes
+});
 ```
 
 ---
 
-## E.164 Format Explained
+## Why This Fixes the Issue
 
-The E.164 standard defines the international phone number format:
-- Starts with `+`
-- Followed by country code (1-3 digits, cannot start with 0)
-- Followed by subscriber number
-- Total length: 7-15 digits (excluding the `+`)
-
-**Examples:**
-| Country | Number | E.164 Format |
-|---------|--------|--------------|
-| UK | 07700 900123 | +447700900123 |
-| India | 98765 43210 | +919876543210 |
-| USA | (555) 123-4567 | +15551234567 |
-| Germany | 0170 1234567 | +491701234567 |
+| Before | After |
+|--------|-------|
+| `useCallHistory` fetches once on mount | `useCallHistory` refetches every 2 seconds |
+| `inProgressReminderIds` becomes stale | `inProgressReminderIds` stays current |
+| Card disappears when `is_active` → false | Card persists with "Call in progress" indicator |
+| Need page refresh to see updates | Updates appear automatically |
 
 ---
 
-## Why This Is Safe
+## Technical Details
 
-1. **Frontend already validates thoroughly**: The `libphonenumber-js` library on the frontend ensures only valid phone numbers for specific countries are accepted before reaching the backend
+The filtering logic in `Home.tsx` already handles this correctly (line 38):
+```typescript
+const activeReminders = reminders.filter(
+  (r) => r.is_active || inProgressReminderIds.has(r.id)
+);
+```
 
-2. **E.164 is the universal standard**: This is what Twilio expects and what we're already storing in the database
-
-3. **Backend still validates format**: We still reject malformed input - just not country-specific patterns
-
-4. **Twilio handles invalid numbers**: If somehow an invalid number gets through, Twilio will return an error which we already handle
+The issue is simply that `inProgressReminderIds` was never being updated because the call history data was stale.
 
 ---
 
 ## Summary
 
-| Aspect | Before | After |
-|--------|--------|-------|
-| Regex | `^\+447\d{9}$` | `^\+[1-9]\d{6,14}$` |
-| UK numbers | ✅ Accepted | ✅ Accepted |
-| India numbers | ❌ Rejected | ✅ Accepted |
-| All other countries | ❌ Rejected | ✅ Accepted |
-| Error message | "Invalid UK phone number..." | "Invalid phone number format..." |
+| File | Change |
+|------|--------|
+| `src/hooks/useCallHistory.ts` | Add `refetchInterval: 2000` to useQuery options |
+
+This single-line fix ensures call status updates are reflected in real-time without requiring a page refresh.
+
