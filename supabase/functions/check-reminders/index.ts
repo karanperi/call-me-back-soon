@@ -241,6 +241,7 @@ serve(async (req) => {
             phoneNumber: reminder.phone_number,
             message: reminder.message,
             voice: reminder.voice,
+            customVoiceId: reminder.custom_voice_id,
             userId: reminder.user_id,
           }),
         });
