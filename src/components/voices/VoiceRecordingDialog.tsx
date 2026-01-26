@@ -26,7 +26,13 @@ interface VoiceRecordingDialogProps {
 const MIN_DURATION = 10;
 const RECOMMENDED_DURATION = 60;
 
-const SCRIPT_TEXT = `Hi, this is [your name]. I'm recording my voice so I can send you personalized reminders. I want to make sure you're taking care of yourself and taking your medications on time. I love you and think of you every day.`;
+const SCRIPT_TEXT = `Hi, this is [your name]. I'm recording my voice so I can send you personalized reminders. I want to make sure you're taking care of yourself and staying healthy.
+
+Remember to take your medications on time – they're important for keeping you strong. And don't forget to drink plenty of water throughout the day. It's the little things that make a big difference.
+
+I also want you to know that I think about you every single day. Even when we're not together, you're always in my heart. I hope this message brings a smile to your face and reminds you how much you mean to me.
+
+Take care of yourself, get some rest when you need it, and know that I love you very much. I'll talk to you again soon. Sending you all my love and warmest hugs.`;
 
 export const VoiceRecordingDialog = ({
   open,
@@ -37,7 +43,9 @@ export const VoiceRecordingDialog = ({
   const [voiceName, setVoiceName] = useState("My Voice");
   const [consent, setConsent] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackProgress, setPlaybackProgress] = useState(0);
   const [createdVoiceId, setCreatedVoiceId] = useState<string | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -64,11 +72,27 @@ export const VoiceRecordingDialog = ({
         setVoiceName("My Voice");
         setConsent(false);
         setIsPlaying(false);
+        setPlaybackProgress(0);
         setCreatedVoiceId(null);
+        if (audioUrl) {
+          URL.revokeObjectURL(audioUrl);
+          setAudioUrl(null);
+        }
         resetRecording();
       }, 300);
     }
-  }, [open, resetRecording]);
+  }, [open, resetRecording, audioUrl]);
+
+  // Create audio URL when blob is available
+  useEffect(() => {
+    if (audioBlob) {
+      const url = URL.createObjectURL(audioBlob);
+      setAudioUrl(url);
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    }
+  }, [audioBlob]);
 
   // Handle recording stop
   useEffect(() => {
@@ -107,14 +131,29 @@ export const VoiceRecordingDialog = ({
   };
 
   const handlePlayPause = () => {
-    if (!audioBlob || !audioRef.current) return;
+    if (!audioUrl || !audioRef.current) return;
 
     if (isPlaying) {
       audioRef.current.pause();
+      setIsPlaying(false);
     } else {
-      audioRef.current.play();
+      audioRef.current.play().catch((err) => {
+        console.error("Error playing audio:", err);
+      });
+      setIsPlaying(true);
     }
-    setIsPlaying(!isPlaying);
+  };
+
+  const handleTimeUpdate = () => {
+    if (audioRef.current && audioRef.current.duration) {
+      const progress = (audioRef.current.currentTime / audioRef.current.duration) * 100;
+      setPlaybackProgress(progress);
+    }
+  };
+
+  const handleAudioEnded = () => {
+    setIsPlaying(false);
+    setPlaybackProgress(0);
   };
 
   const handleCreateVoice = async () => {
@@ -174,7 +213,7 @@ export const VoiceRecordingDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-0">
+      <DialogContent className="max-w-md p-0 [&>button]:hidden" aria-describedby={undefined}>
         <DialogHeader className="px-4 pt-4 pb-3 border-b border-border">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-semibold">
@@ -296,19 +335,25 @@ export const VoiceRecordingDialog = ({
                 </button>
                 <div className="flex-1">
                   <div className="h-2 bg-secondary rounded-full overflow-hidden">
-                    <div className="h-full bg-primary w-0" />
+                    <div 
+                      className="h-full bg-primary transition-all duration-100" 
+                      style={{ width: `${playbackProgress}%` }}
+                    />
                   </div>
                 </div>
                 <span className="text-sm font-mono text-muted-foreground">
-                  {formatDuration(duration)}
+                  {audioRef.current && isPlaying 
+                    ? formatDuration(Math.floor(audioRef.current.currentTime))
+                    : formatDuration(duration)}
                 </span>
               </div>
 
-              {audioBlob && (
+              {audioUrl && (
                 <audio
                   ref={audioRef}
-                  src={URL.createObjectURL(audioBlob)}
-                  onEnded={() => setIsPlaying(false)}
+                  src={audioUrl}
+                  onTimeUpdate={handleTimeUpdate}
+                  onEnded={handleAudioEnded}
                 />
               )}
 
