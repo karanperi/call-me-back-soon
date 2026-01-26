@@ -24,9 +24,10 @@ const NavItem = ({ to, icon, label, isActive }: NavItemProps) => (
 
 interface BottomNavProps {
   onCreateClick: () => void;
+  showTooltip?: boolean;
 }
 
-export const BottomNav = ({ onCreateClick }: BottomNavProps) => {
+export const BottomNav = ({ onCreateClick, showTooltip = false }: BottomNavProps) => {
   const location = useLocation();
 
   const navItems = [
@@ -60,14 +61,27 @@ export const BottomNav = ({ onCreateClick }: BottomNavProps) => {
           />
         ))}
 
-        {/* Floating Action Button */}
-        <button
-          onClick={onCreateClick}
-          className="absolute left-1/2 -translate-x-1/2 -top-6 w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg hover:bg-primary/90 transition-colors active:scale-95"
-          aria-label="Create new reminder"
-        >
-          <Plus className="h-7 w-7 text-primary-foreground" />
-        </button>
+        {/* Floating Action Button with Tooltip */}
+        <div className="absolute left-1/2 -translate-x-1/2 -top-6">
+          {/* Educational Tooltip */}
+          {showTooltip && (
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap animate-in fade-in slide-in-from-bottom-2 duration-300">
+              <div className="bg-foreground text-background text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg">
+                Create a new reminder
+              </div>
+              {/* Tooltip arrow */}
+              <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-foreground" />
+            </div>
+          )}
+          
+          <button
+            onClick={onCreateClick}
+            className="w-14 h-14 bg-primary rounded-full flex items-center justify-center shadow-lg hover:bg-primary/90 transition-colors active:scale-95"
+            aria-label="Create new reminder"
+          >
+            <Plus className="h-7 w-7 text-primary-foreground" />
+          </button>
+        </div>
       </div>
     </nav>
   );
