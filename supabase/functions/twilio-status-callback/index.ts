@@ -1,5 +1,53 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
+import { encodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts";
+
+/**
+ * Validates that the request actually comes from Twilio by verifying
+ * the X-Twilio-Signature header using HMAC-SHA1.
+ * 
+ * @see https://www.twilio.com/docs/usage/security#validating-requests
+ */
+async function validateTwilioSignature(
+  authToken: string,
+  signature: string,
+  url: string,
+  params: Record<string, string>
+): Promise<boolean> {
+  // Sort the POST parameters alphabetically by key
+  const sortedKeys = Object.keys(params).sort();
+  
+  // Concatenate the URL and sorted key-value pairs
+  const data = url + sortedKeys.map(key => key + params[key]).join("");
+  
+  // Import key for HMAC-SHA1
+  const encoder = new TextEncoder();
+  const keyData = encoder.encode(authToken);
+  const key = await crypto.subtle.importKey(
+    "raw",
+    keyData,
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"]
+  );
+  
+  // Compute HMAC-SHA1
+  const messageData = encoder.encode(data);
+  const signatureBuffer = await crypto.subtle.sign("HMAC", key, messageData);
+  const expectedSignature = encodeBase64(signatureBuffer);
+  
+  // Constant-time comparison to prevent timing attacks
+  if (signature.length !== expectedSignature.length) {
+    return false;
+  }
+  
+  let result = 0;
+  for (let i = 0; i < signature.length; i++) {
+    result |= signature.charCodeAt(i) ^ expectedSignature.charCodeAt(i);
+  }
+  return result === 0;
+}
 
 serve(async (req) => {
   // Handle preflight requests
@@ -8,12 +56,42 @@ serve(async (req) => {
   }
 
   try {
-    // Twilio sends form-encoded data
+    // Get Twilio Auth Token for signature validation
+    const authToken = Deno.env.get("TWILIO_AUTH_TOKEN");
+    if (!authToken) {
+      console.error("TWILIO_AUTH_TOKEN not configured");
+      return new Response("Server Configuration Error", { status: 500 });
+    }
+
+    // Validate Twilio signature
+    const twilioSignature = req.headers.get("X-Twilio-Signature");
+    if (!twilioSignature) {
+      console.error("Missing X-Twilio-Signature header - rejecting request");
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    // Clone the request to read form data (we need to read it twice: for validation and processing)
     const formData = await req.formData();
-    const callSid = formData.get("CallSid") as string;
-    const callStatus = formData.get("CallStatus") as string;
-    const answeredBy = formData.get("AnsweredBy") as string | null;
-    const callDuration = formData.get("CallDuration") as string | null;
+    const params: Record<string, string> = {};
+    formData.forEach((value, key) => {
+      params[key] = value.toString();
+    });
+
+    // Get the full URL that Twilio used (including any query params)
+    const url = req.url;
+
+    // Validate the signature
+    const isValid = await validateTwilioSignature(authToken, twilioSignature, url, params);
+    if (!isValid) {
+      console.error("Invalid Twilio signature - rejecting request");
+      return new Response("Unauthorized", { status: 401 });
+    }
+
+    // Extract callback data
+    const callSid = params["CallSid"];
+    const callStatus = params["CallStatus"];
+    const answeredBy = params["AnsweredBy"] || null;
+    const callDuration = params["CallDuration"] || null;
 
     console.log(`Callback received: SID=${callSid}, Status=${callStatus}, AnsweredBy=${answeredBy}, Duration=${callDuration}`);
 
