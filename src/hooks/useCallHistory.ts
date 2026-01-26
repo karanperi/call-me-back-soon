@@ -36,5 +36,6 @@ export const useCallHistory = (filter?: "completed" | "missed" | "voicemail" | "
       return data as CallHistory[];
     },
     enabled: !!user,
+    refetchInterval: 2000, // Auto-refresh every 2 seconds to catch status changes
   });
 };
