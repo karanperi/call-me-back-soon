@@ -366,8 +366,8 @@ export const MedicationReminderForm = ({
                     </>
                   ) : (
                     <>
-                      <ChevronDown className="h-3 w-3" />
                       Change these times
+                      <ChevronDown className="h-3 w-3" />
                     </>
                   )}
                 </button>
