@@ -18,7 +18,8 @@ interface ReminderPayload {
 
 // Input validation constants
 const VALID_VOICES = ["friendly_female", "friendly_male"];
-const UK_PHONE_REGEX = /^\+447\d{9}$/;
+// E.164 format: + followed by 7-15 digits (covers all international numbers)
+const E164_PHONE_REGEX = /^\+[1-9]\d{6,14}$/;
 const MAX_MESSAGE_LENGTH = 500;
 const MIN_MESSAGE_LENGTH = 1;
 const MAX_RECIPIENT_NAME_LENGTH = 100;
@@ -153,12 +154,12 @@ serve(async (req) => {
     };
 
     // ============================================================
-    // Input validation - Phone number format (UK)
+    // Input validation - Phone number format (E.164 international)
     // ============================================================
-    if (!UK_PHONE_REGEX.test(phoneNumber)) {
-      await updateHistoryStatus("failed", "Invalid UK phone number format. Expected: +447XXXXXXXXX");
+    if (!E164_PHONE_REGEX.test(phoneNumber)) {
+      await updateHistoryStatus("failed", "Invalid phone number format. Expected international format: +[country code][number]");
       return new Response(
-        JSON.stringify({ error: "Invalid UK phone number format. Expected: +447XXXXXXXXX" }),
+        JSON.stringify({ error: "Invalid phone number format. Expected international format: +[country code][number]" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
