@@ -1,87 +1,115 @@
 
-# Reduce Audio File Size for Faster Call Playback
+# Fix: International Phone Number Validation in Backend
 
 ## Problem
-There's a noticeable delay after calls are answered before the audio starts playing. This is caused by Twilio needing to download the entire audio file before playback begins. Current audio files are ~383 KB due to ElevenLabs' default high-quality output format.
+
+The `make-call` edge function rejects all non-UK phone numbers due to a hardcoded UK-only regex validation, despite the frontend supporting international numbers.
+
+**Error message**: "Invalid UK phone number format. Expected: +447XXXXXXXXX"
+
+## Root Cause
+
+```typescript
+// Lines 21 and 155-164 in make-call/index.ts
+const UK_PHONE_REGEX = /^\+447\d{9}$/;  // Only accepts UK mobile numbers
+
+if (!UK_PHONE_REGEX.test(phoneNumber)) {
+  // Rejects ALL non-UK numbers including India (+91...)
+}
+```
+
+---
 
 ## Solution
-Add the `output_format` parameter to the ElevenLabs API request in `make-call/index.ts` to generate phone-optimized audio files (~75% smaller).
 
-## Important Technical Note
-According to the ElevenLabs API documentation, the `output_format` parameter **must be passed as a query parameter in the URL**, not in the request body. This is a common mistake that can cause API errors.
+Replace the UK-only regex with a general E.164 international phone number validation that:
+1. Accepts any valid E.164 format (`+` followed by 7-15 digits)
+2. Validates the number starts with a proper country code
+3. Relies on the frontend's comprehensive `libphonenumber-js` validation for country-specific rules
 
 ---
 
-## Change Required
+## Changes Required
 
-**File:** `supabase/functions/make-call/index.ts`
+### File: `supabase/functions/make-call/index.ts`
 
-**Location:** Lines 207-225 (ElevenLabs API call)
+#### Change 1: Update validation constant (line 21)
 
-**Current code:**
+**Current:**
 ```typescript
-const elevenLabsResponse = await fetch(
-  `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-  {
-    method: "POST",
-    headers: {
-      "Accept": "audio/mpeg",
-      "Content-Type": "application/json",
-      "xi-api-key": ELEVENLABS_API_KEY,
-    },
-    body: JSON.stringify({
-      text: personalizedMessage,
-      model_id: "eleven_turbo_v2_5",
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-      },
-    }),
-  }
-);
+const UK_PHONE_REGEX = /^\+447\d{9}$/;
 ```
 
-**Updated code:**
+**New:**
 ```typescript
-const elevenLabsResponse = await fetch(
-  `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_22050_32`,
-  {
-    method: "POST",
-    headers: {
-      "Accept": "audio/mpeg",
-      "Content-Type": "application/json",
-      "xi-api-key": ELEVENLABS_API_KEY,
-    },
-    body: JSON.stringify({
-      text: personalizedMessage,
-      model_id: "eleven_turbo_v2_5",
-      voice_settings: {
-        stability: 0.5,
-        similarity_boost: 0.75,
-      },
-    }),
-  }
-);
+// E.164 format: + followed by 7-15 digits (covers all international numbers)
+const E164_PHONE_REGEX = /^\+[1-9]\d{6,14}$/;
+```
+
+#### Change 2: Update validation logic (lines 155-164)
+
+**Current:**
+```typescript
+// Input validation - Phone number format (UK)
+if (!UK_PHONE_REGEX.test(phoneNumber)) {
+  await updateHistoryStatus("failed", "Invalid UK phone number format. Expected: +447XXXXXXXXX");
+  return new Response(
+    JSON.stringify({ error: "Invalid UK phone number format. Expected: +447XXXXXXXXX" }),
+    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
+```
+
+**New:**
+```typescript
+// Input validation - Phone number format (E.164 international)
+if (!E164_PHONE_REGEX.test(phoneNumber)) {
+  await updateHistoryStatus("failed", "Invalid phone number format. Expected international format: +[country code][number]");
+  return new Response(
+    JSON.stringify({ error: "Invalid phone number format. Expected international format: +[country code][number]" }),
+    { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+  );
+}
 ```
 
 ---
 
-## Expected Results
+## E.164 Format Explained
 
-| Metric | Before | After |
+The E.164 standard defines the international phone number format:
+- Starts with `+`
+- Followed by country code (1-3 digits, cannot start with 0)
+- Followed by subscriber number
+- Total length: 7-15 digits (excluding the `+`)
+
+**Examples:**
+| Country | Number | E.164 Format |
+|---------|--------|--------------|
+| UK | 07700 900123 | +447700900123 |
+| India | 98765 43210 | +919876543210 |
+| USA | (555) 123-4567 | +15551234567 |
+| Germany | 0170 1234567 | +491701234567 |
+
+---
+
+## Why This Is Safe
+
+1. **Frontend already validates thoroughly**: The `libphonenumber-js` library on the frontend ensures only valid phone numbers for specific countries are accepted before reaching the backend
+
+2. **E.164 is the universal standard**: This is what Twilio expects and what we're already storing in the database
+
+3. **Backend still validates format**: We still reject malformed input - just not country-specific patterns
+
+4. **Twilio handles invalid numbers**: If somehow an invalid number gets through, Twilio will return an error which we already handle
+
+---
+
+## Summary
+
+| Aspect | Before | After |
 |--------|--------|-------|
-| File size | ~383 KB | ~80 KB |
-| Reduction | - | ~75% smaller |
-| Call quality | Phone-quality | Phone-quality (no difference) |
-| Playback delay | Noticeable | Significantly reduced |
-
----
-
-## Technical Details
-
-The `mp3_22050_32` format means:
-- **MP3 codec**: Universal compatibility
-- **22.05 kHz sample rate**: More than sufficient for phone calls (limited to ~8kHz)
-- **32 kbps bitrate**: Optimized for voice, smaller file size
-
-This format is ideal for telephony because phone call audio quality is inherently limited, so high-fidelity audio provides no perceptible benefit to the recipient.
+| Regex | `^\+447\d{9}$` | `^\+[1-9]\d{6,14}$` |
+| UK numbers | ✅ Accepted | ✅ Accepted |
+| India numbers | ❌ Rejected | ✅ Accepted |
+| All other countries | ❌ Rejected | ✅ Accepted |
+| Error message | "Invalid UK phone number..." | "Invalid phone number format..." |
