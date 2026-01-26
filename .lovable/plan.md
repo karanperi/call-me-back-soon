@@ -1,67 +1,87 @@
 
-# Fix: Form Content Alignment Issues
+# Reduce Audio File Size for Faster Call Playback
 
 ## Problem
-
-The form content in both the Template Picker and Medication Reminder Form is shifted/leaning to the right side, making all input fields misaligned.
-
-## Root Cause
-
-Two issues are combining to cause the misalignment:
-
-1. **Double padding in TemplatePicker**: The outer wrapper has `px-4` padding, and the inner scrollable container also has `px-4`, creating asymmetric spacing
-2. **Negative margins in sticky button**: The `MedicationReminderForm` uses `-mx-4` negative margins on the sticky button, which when combined with `overflow-x-hidden` creates layout shifts
-
----
+There's a noticeable delay after calls are answered before the audio starts playing. This is caused by Twilio needing to download the entire audio file before playback begins. Current audio files are ~383 KB due to ElevenLabs' default high-quality output format.
 
 ## Solution
+Add the `output_format` parameter to the ElevenLabs API request in `make-call/index.ts` to generate phone-optimized audio files (~75% smaller).
 
-### Change 1: TemplatePicker.tsx
-
-Remove the extra `px-4` from the inner scrollable div and simplify by removing the gradient fade overlays:
-
-**Current (lines 45-46):**
-```tsx
-<div 
-  className="flex gap-2 overflow-x-auto px-4"
-```
-
-**Fixed:**
-```tsx
-<div 
-  className="flex gap-2 overflow-x-auto"
-```
-
-Also remove the fade gradient divs (lines 41-42 and 79-80) as they contribute to the alignment issues.
-
-### Change 2: MedicationReminderForm.tsx
-
-Replace the negative margin approach with a cleaner sticky implementation:
-
-**Current (line 409):**
-```tsx
-<div className="sticky bottom-0 left-0 right-0 p-4 -mx-4 -mb-4 bg-background border-t border-border">
-```
-
-**Fixed:**
-```tsx
-<div className="sticky bottom-0 left-0 right-0 pt-4 pb-4 bg-background border-t border-border">
-```
-
-This removes the negative margins that cause the overflow-related layout shift while maintaining the sticky behavior and visual separation.
+## Important Technical Note
+According to the ElevenLabs API documentation, the `output_format` parameter **must be passed as a query parameter in the URL**, not in the request body. This is a common mistake that can cause API errors.
 
 ---
 
-## Summary of Changes
+## Change Required
 
-| File | Issue | Fix |
-|------|-------|-----|
-| TemplatePicker.tsx | Double `px-4` padding | Remove inner `px-4`, remove gradient fades |
-| MedicationReminderForm.tsx | Negative margins `-mx-4 -mb-4` | Replace with standard `pt-4 pb-4` padding |
+**File:** `supabase/functions/make-call/index.ts`
 
-## Expected Result
+**Location:** Lines 207-225 (ElevenLabs API call)
 
-- All form fields will be properly centered and aligned within the dialog
-- Template pills carousel remains horizontally scrollable
-- Sticky button works correctly without layout shifts
-- No horizontal scrolling on the overall page
+**Current code:**
+```typescript
+const elevenLabsResponse = await fetch(
+  `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+  {
+    method: "POST",
+    headers: {
+      "Accept": "audio/mpeg",
+      "Content-Type": "application/json",
+      "xi-api-key": ELEVENLABS_API_KEY,
+    },
+    body: JSON.stringify({
+      text: personalizedMessage,
+      model_id: "eleven_turbo_v2_5",
+      voice_settings: {
+        stability: 0.5,
+        similarity_boost: 0.75,
+      },
+    }),
+  }
+);
+```
+
+**Updated code:**
+```typescript
+const elevenLabsResponse = await fetch(
+  `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_22050_32`,
+  {
+    method: "POST",
+    headers: {
+      "Accept": "audio/mpeg",
+      "Content-Type": "application/json",
+      "xi-api-key": ELEVENLABS_API_KEY,
+    },
+    body: JSON.stringify({
+      text: personalizedMessage,
+      model_id: "eleven_turbo_v2_5",
+      voice_settings: {
+        stability: 0.5,
+        similarity_boost: 0.75,
+      },
+    }),
+  }
+);
+```
+
+---
+
+## Expected Results
+
+| Metric | Before | After |
+|--------|--------|-------|
+| File size | ~383 KB | ~80 KB |
+| Reduction | - | ~75% smaller |
+| Call quality | Phone-quality | Phone-quality (no difference) |
+| Playback delay | Noticeable | Significantly reduced |
+
+---
+
+## Technical Details
+
+The `mp3_22050_32` format means:
+- **MP3 codec**: Universal compatibility
+- **22.05 kHz sample rate**: More than sufficient for phone calls (limited to ~8kHz)
+- **32 kbps bitrate**: Optimized for voice, smaller file size
+
+This format is ideal for telephony because phone call audio quality is inherently limited, so high-fidelity audio provides no perceptible benefit to the recipient.
