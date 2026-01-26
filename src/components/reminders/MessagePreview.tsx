@@ -72,7 +72,7 @@ export const MessagePreview = ({
   return (
     <div className="space-y-2">
       <Label>Message Preview</Label>
-      {medicationCount && medicationCount >= 3 && (
+      {medicationCount !== undefined && medicationCount >= 3 && (
         <p className="text-xs text-muted-foreground flex items-center gap-1">
           <Info className="h-3 w-3" />
           {medicationCount >= 5 
