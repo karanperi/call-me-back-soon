@@ -86,44 +86,6 @@ const Voices = () => {
       />
 
       <div className="max-w-lg mx-auto px-4 py-4">
-        {/* Currently active voice */}
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-          Currently Active
-        </p>
-
-        <div className="bg-card rounded-lg p-4 card-shadow border border-border mb-6">
-          <div className="flex items-center gap-4">
-            <div
-              className={cn(
-                "w-14 h-14 rounded-full bg-gradient-to-br flex-shrink-0",
-                activeVoiceData?.gradient
-              )}
-            />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <p className="font-medium text-foreground">
-                  {activeVoiceData?.name}
-                </p>
-                <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full font-medium">
-                  ACTIVE
-                </span>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {activeVoiceData?.description}
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePlayPreview}
-              className="flex-shrink-0"
-            >
-              <Play className="w-4 h-4 mr-1" />
-              Listen
-            </Button>
-          </div>
-        </div>
-
         {/* Filter pills */}
         <div className="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-4 px-4">
           {["All", "Calm", "Professional", "Energetic"].map((f) => (
