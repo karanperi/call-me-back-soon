@@ -235,7 +235,7 @@ export const CreateReminderDialog = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden p-0">
         <DialogHeader className="sticky top-0 bg-card z-10 px-4 pt-4 pb-3 border-b border-border safe-area-top">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-lg font-semibold">
