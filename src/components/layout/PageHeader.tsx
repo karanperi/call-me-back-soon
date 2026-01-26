@@ -20,9 +20,9 @@ export const PageHeader = ({
         className
       )}
     >
-      <div className="flex items-center justify-between min-h-14 px-4 py-2 max-w-lg mx-auto">
-        <div className="flex-1 flex justify-start">{leftElement}</div>
-        {title && <h1 className="text-lg font-semibold text-foreground">{title}</h1>}
+      <div className="flex items-center justify-between h-14 px-4 max-w-lg mx-auto">
+        <div className="w-10 flex justify-start">{leftElement}</div>
+        <h1 className="text-lg font-semibold text-foreground">{title}</h1>
         <div className="w-10 flex justify-end">{rightElement}</div>
       </div>
     </header>

@@ -12,7 +12,6 @@ import Welcome from "./pages/Welcome";
 import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
 import Home from "./pages/Home";
-import Reminders from "./pages/Reminders";
 import History from "./pages/History";
 import Voices from "./pages/Voices";
 import Profile from "./pages/Profile";
@@ -38,7 +37,6 @@ const App = () => (
             <Route element={<ProtectedRoute />}>
               <Route element={<AppLayout />}>
                 <Route path="/" element={<Home />} />
-                <Route path="/reminders" element={<Reminders />} />
                 <Route path="/history" element={<History />} />
                 <Route path="/voices" element={<Voices />} />
                 <Route path="/profile" element={<Profile />} />
