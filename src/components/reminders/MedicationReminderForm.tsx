@@ -178,7 +178,7 @@ export const MedicationReminderForm = ({
   today.setHours(0, 0, 0, 0);
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 space-y-6">
+    <form onSubmit={handleSubmit} className="p-4 space-y-6 overflow-x-hidden">
       {/* Recipient Details */}
       <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
