@@ -35,20 +35,20 @@ const History = () => {
     { value: "failed", label: "Failed" },
   ];
 
-  const getStatusColor = (status: string) => {
+  const getCardStatusStyles = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-success";
+        return "bg-success/10 border-success/30";
       case "missed":
       case "failed":
-        return "bg-destructive";
+        return "bg-destructive/10 border-destructive/30";
       case "voicemail":
       case "in_progress":
-        return "bg-warning";
+        return "bg-warning/10 border-warning/30";
       case "pending":
-        return "bg-muted-foreground";
+        return "bg-muted border-border";
       default:
-        return "bg-muted";
+        return "bg-card border-border";
     }
   };
 
@@ -131,13 +131,17 @@ const History = () => {
                 <div
                   key={item.id}
                   onClick={() => setSelectedCall(item)}
-                  className="bg-card rounded-lg p-4 card-shadow border border-border flex items-center gap-4 cursor-pointer hover:bg-card/80 transition-colors"
+                  className={cn(
+                    "rounded-lg p-4 card-shadow border flex items-center gap-4 cursor-pointer transition-colors",
+                    getCardStatusStyles(item.status),
+                    "hover:opacity-80"
+                  )}
                 >
                   {/* Avatar */}
                   <div className={cn(
                     "w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0",
                     item.status === "failed" 
-                      ? "bg-destructive/10" 
+                      ? "bg-destructive/20" 
                       : "bg-gradient-to-br from-primary/20 to-primary/10"
                   )}>
                     {item.status === "failed" ? (
@@ -151,17 +155,9 @@ const History = () => {
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="font-medium text-foreground truncate">
-                        {item.recipient_name}
-                      </p>
-                      <div
-                        className={cn(
-                          "w-2 h-2 rounded-full flex-shrink-0",
-                          getStatusColor(item.status)
-                        )}
-                      />
-                    </div>
+                    <p className="font-medium text-foreground truncate">
+                      {item.recipient_name}
+                    </p>
                     <p className="text-sm text-muted-foreground truncate">
                       {getStatusText(item)}
                     </p>
