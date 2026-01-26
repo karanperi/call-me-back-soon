@@ -1,18 +1,34 @@
 
-
-# Multi-Medication Reminder Feature Implementation Plan
+# Familiar Voice Recording Feature Implementation Plan
 
 ## Overview
 
-This plan implements a multi-medication reminder feature with a minimal, clutter-free UI using progressive disclosure. The interface starts simple (identical to current single-medication form) and reveals complexity only when the user explicitly requests it through a "+ Add another medication" link.
+This plan implements a "Familiar Voice" feature that allows users to record their own voice in-browser and create a voice clone using ElevenLabs' Instant Voice Clone API. Recipients can then hear their loved one's actual voice during reminder calls.
 
-## Architecture
+## Architecture Summary
 
-The implementation follows an accordion pattern where:
-- Initial view looks exactly like the current single-medication form
-- A subtle "+ Add another medication" link is always visible below the form
-- Completed medications collapse into compact chips
-- Only one medication can be expanded for editing at a time
+```text
+┌─────────────────────────────────────────────────────────────────────┐
+│                         VOICES PAGE                                  │
+├─────────────────────────────────────────────────────────────────────┤
+│  MY VOICES Section                                                   │
+│  ├── If has voice: UserVoiceCard (preview, delete, select)         │
+│  └── If no voice: "Add Your Voice" card → VoiceRecordingDialog     │
+├─────────────────────────────────────────────────────────────────────┤
+│  AI VOICES Section (existing)                                        │
+│  ├── Friendly Female card                                            │
+│  └── Friendly Male card                                              │
+└─────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────┐
+│                    VOICE RECORDING DIALOG                            │
+│  Step 1: Introduction → Tips & "Start Recording" button             │
+│  Step 2: Recording → Timer, audio level, script to read             │
+│  Step 3: Review → Playback, name input, consent checkbox            │
+│  Step 4: Processing → Spinner while cloning                         │
+│  Step 5: Success → Preview generated voice                          │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -20,242 +36,340 @@ The implementation follows an accordion pattern where:
 
 | File | Action | Purpose |
 |------|--------|---------|
-| `src/lib/medicationUtils.ts` | Modify | Add interfaces, constants, and message generation for multi-medication |
-| `src/components/reminders/MedicationChip.tsx` | Create | Compact pill showing collapsed medication summary |
-| `src/components/reminders/MedicationExpandedForm.tsx` | Create | Full form fields for entering/editing a medication |
-| `src/components/reminders/MedicationList.tsx` | Create | Orchestrator component managing accordion behavior |
-| `src/components/reminders/MedicationReminderForm.tsx` | Modify | Replace single medication fields with MedicationList component |
-| `src/components/reminders/MessagePreview.tsx` | Modify | Add optional medication count hint for 3+ medications |
+| **Database** | | |
+| Migration | Create | `user_voices` table + add `custom_voice_id` to reminders |
+| **Edge Functions** | | |
+| `supabase/functions/create-voice-clone/index.ts` | Create | Handle ElevenLabs voice cloning API |
+| `supabase/functions/preview-voice/index.ts` | Create | Generate TTS preview for cloned voice |
+| `supabase/functions/delete-voice-clone/index.ts` | Create | Delete voice from ElevenLabs + DB |
+| **Hooks** | | |
+| `src/hooks/useUserVoice.ts` | Create | CRUD operations for user voice clones |
+| `src/hooks/useAudioRecorder.ts` | Create | Web Audio API recording logic |
+| **Components** | | |
+| `src/components/voices/VoiceRecordingDialog.tsx` | Create | Multi-step recording wizard |
+| `src/components/voices/UserVoiceCard.tsx` | Create | Display user's cloned voice |
+| `src/components/voices/VoiceSelector.tsx` | Create | Reusable voice picker (AI + custom) |
+| `src/pages/Voices.tsx` | Modify | Add "MY VOICES" section |
+| `src/components/reminders/CreateReminderDialog.tsx` | Modify | Use VoiceSelector component |
+| `src/components/reminders/MedicationReminderForm.tsx` | Modify | Use VoiceSelector component |
+| `src/components/reminders/EditReminderDialog.tsx` | Modify | Use VoiceSelector component |
+| `supabase/functions/make-call/index.ts` | Modify | Support custom voice TTS |
 
 ---
 
 ## Technical Details
 
-### 1. Data Model Extensions (`medicationUtils.ts`)
+### 1. Database Schema Changes
 
-**New interfaces:**
+**New table: `user_voices`**
+- `id` (UUID, primary key)
+- `user_id` (UUID, FK to auth.users, ON DELETE CASCADE)
+- `name` (TEXT, required) - User-provided voice name
+- `elevenlabs_voice_id` (TEXT, required) - Voice ID from ElevenLabs
+- `status` (TEXT) - 'processing' | 'ready' | 'failed'
+- `error_message` (TEXT, nullable) - Error details if failed
+- `created_at`, `updated_at` (timestamps)
+
+**RLS policies:**
+- Users can only view/create/update/delete their own voices
+- Limit: 1 voice per user (enforced in edge function)
+
+**Update `reminders` table:**
+- Add `custom_voice_id` (UUID, nullable, FK to user_voices, ON DELETE SET NULL)
+- Update voice check constraint to allow 'custom' value
+
+### 2. Edge Functions
+
+#### `create-voice-clone/index.ts`
+
+**Flow:**
+1. Validate JWT authentication
+2. Check if user already has a voice (limit: 1)
+3. Accept audio data (base64 + voice name)
+4. Create "processing" record in `user_voices`
+5. Call ElevenLabs Instant Voice Clone API:
+   - Endpoint: `POST https://api.elevenlabs.io/v1/voices/add`
+   - Multipart form data: name, audio file, description
+6. Update record with `elevenlabs_voice_id` + status 'ready'
+7. Handle errors: update status to 'failed' with message
+
+**ElevenLabs API details:**
+- Uses existing `ELEVENLABS_API_KEY` secret
+- Returns voice_id on success
+
+#### `preview-voice/index.ts`
+
+**Flow:**
+1. Validate JWT
+2. Accept voice_id parameter
+3. Call ElevenLabs TTS API with sample text: "This is a small reminder to smile today."
+4. Return audio as base64
+5. Consider caching preview (store in storage bucket)
+
+#### `delete-voice-clone/index.ts`
+
+**Flow:**
+1. Validate JWT
+2. Verify user owns the voice
+3. Call ElevenLabs delete API: `DELETE https://api.elevenlabs.io/v1/voices/{voice_id}`
+4. Delete from `user_voices` table
+5. Update any reminders using this voice to fall back to 'friendly_female'
+
+### 3. React Hooks
+
+#### `useUserVoice.ts`
+
 ```text
-MedicationEntry {
-  id: string
-  name: string
-  quantity?: number
-  unit?: 'tablet' | 'capsule' | 'ml' | 'drops' | 'puff' | 'unit'
-  dosage?: string (legacy field for backwards compatibility)
-  instruction: InstructionKey
-}
+- useUserVoice(): Query hook to fetch user's voice clone
+- useCreateVoiceClone(): Mutation to upload recording and create clone
+- useDeleteVoiceClone(): Mutation to delete voice
+- usePreviewVoice(): Fetch TTS preview audio
 ```
 
-**New constants:**
+Pattern follows existing hooks (useProfile, useReminders).
+
+#### `useAudioRecorder.ts`
+
+Custom hook encapsulating Web Audio API:
+
 ```text
-DOSAGE_UNITS = [
-  { key: 'tablet', singular: 'tablet', plural: 'tablets' },
-  { key: 'capsule', singular: 'capsule', plural: 'capsules' },
-  { key: 'ml', singular: 'ml', plural: 'ml' },
-  { key: 'drops', singular: 'drop', plural: 'drops' },
-  { key: 'puff', singular: 'puff', plural: 'puffs' },
-  { key: 'unit', singular: 'unit', plural: 'units' },
-]
+State:
+- isRecording: boolean
+- duration: number (seconds)
+- audioLevel: number (0-1 for visualization)
+- audioBlob: Blob | null
+
+Methods:
+- startRecording(): Request mic permission, start MediaRecorder
+- stopRecording(): Stop recorder, return blob
+- resetRecording(): Clear state
+
+Uses:
+- navigator.mediaDevices.getUserMedia({ audio: true })
+- MediaRecorder with mimeType 'audio/webm'
+- AudioContext + AnalyserNode for real-time levels
 ```
 
-**New functions:**
-- `formatMedicationDosage(quantity, unit)` - Returns properly pluralized dosage string (e.g., "2 tablets")
-- `generateMultiMedicationMessage(recipientName, medications[])` - Smart message generation based on medication count
+### 4. UI Components
 
-**Message generation strategy:**
-- 1 medication: Full detail (current format)
-- 2 medications: Both medications with dosages in parentheses
-- 3-4 medications: Comma-separated list with dosages
-- 5+ medications: Summary count only for brevity
+#### `VoiceRecordingDialog.tsx`
 
-### 2. MedicationChip Component (New)
+Multi-step wizard with 5 steps:
 
-**Purpose:** Compact, pill-shaped summary of a completed medication in collapsed state.
+**Step 1: Introduction**
+- Microphone icon
+- Explanation text: "Your loved ones will hear YOUR voice"
+- Tips list (quiet place, speak naturally, hold device 6-8" away)
+- Duration info: "10 sec min, 60-90 sec recommended"
+- "Start Recording" button
+
+**Step 2: Recording**
+- Red recording indicator with timer (MM:SS format)
+- Audio level visualization (animated bar)
+- Script to read aloud in a styled box:
+  > "Hi, this is [name]. I'm recording my voice so I can send you personalized reminders. I want to make sure you're taking care of yourself and taking your medications on time. I love you and think of you every day."
+- "Stop Recording" button
+- Footer: "Minimum: 10 sec | Recommended: 60 sec"
+
+**Step 3: Review**
+- Audio playback controls (play/pause, seek bar, duration)
+- Voice name input (default: "My Voice")
+- Consent checkbox: "I confirm this is my own voice and I have the right to clone it"
+- "Re-record" and "Create Voice" buttons
+- Soft warning if < 60 seconds (optional continue)
+
+**Step 4: Processing**
+- Spinner
+- "Processing your voice..." text
+- "This usually takes 30-60 seconds"
+
+**Step 5: Success**
+- Checkmark icon
+- "Your voice is ready to use!"
+- Preview button with sample audio
+- "Done" button
+
+**Error handling:**
+- Mic permission denied: Show helpful message with browser instructions
+- API failure: Show retry option
+- Network error: Show connection message
+
+#### `UserVoiceCard.tsx`
+
+Displays user's cloned voice in the "MY VOICES" section.
+
+**Props:** voice, isSelected, onSelect, onDelete, onPreview
+
+**States:**
+- `processing`: Spinner + "Creating voice..." text
+- `ready`: Voice card with preview/select/delete buttons
+- `failed`: Error state with "Try Again" button
 
 **Visual design:**
-- Small rounded pill with `bg-secondary/80 rounded-full px-3 py-1.5`
-- Display format: "Metformin · 2 tablets · with food" using middle dots as separators
-- Small Pencil icon on left, subtle X button on right
-- Hover state: `hover:bg-secondary` with slight elevation
+- Same card style as AI voice cards
+- Gradient: Custom purple-to-green for user voice
+- Play preview button, delete button (trash icon)
+
+#### `VoiceSelector.tsx`
+
+Reusable component for selecting voices in reminder forms.
 
 **Props:**
 ```text
-medication: MedicationEntry
-onExpand: () => void
-onRemove: () => void
+selectedVoice: 'friendly_female' | 'friendly_male' | 'custom'
+customVoiceId?: string
+onSelect: (voice, customVoiceId?) => void
 ```
 
-**Display logic:**
-- Always show medication name
-- If quantity + unit exist: show "· [quantity] [unit]"
-- Else if dosage exists: show "· [dosage]"
-- If instruction is not "none": show "· [instruction label]"
+**Rendering:**
+- "My Voices" section (only if user has voice)
+  - User's voice card with preview button
+- "AI Voices" section header
+  - Friendly Female card
+  - Friendly Male card
 
-### 3. MedicationExpandedForm Component (New)
+### 5. Page & Form Updates
 
-**Purpose:** Expanded state for entering/editing a medication with full form fields.
+#### `Voices.tsx` Updates
 
-**Visual design:**
-- Light background with `bg-secondary/30 rounded-lg p-4`
-- Subtle left border accent: `border-l-2 border-primary/50`
-- Fields stack vertically with `space-y-3`
+Add new section structure:
 
-**Form fields:**
-1. **Medication Name** (required) - Full width input
-2. **Quantity & Unit** (optional) - Side-by-side layout (1/3 + 2/3 width)
-   - Quantity: Number input, placeholder "e.g. 2"
-   - Unit: Select dropdown with DOSAGE_UNITS options
-3. **Instructions** (optional) - Full width select using existing INSTRUCTION_OPTIONS
-
-**Footer behavior:**
-- If only medication (no chips above): No footer needed
-- If other medications exist: Show subtle "Done" text button aligned right
-
-**Props:**
 ```text
-medication: MedicationEntry
-onChange: (updates: Partial<MedicationEntry>) => void
-onCollapse?: () => void  // Only when multiple medications
-onRemove?: () => void    // Only when multiple medications
-isOnlyMedication: boolean
-```
+<PageHeader />
 
-### 4. MedicationList Component (New)
+<div className="max-w-lg mx-auto px-4 py-4">
+  {/* MY VOICES section */}
+  <p className="uppercase tracking-wider mb-3">My Voices</p>
+  
+  {userVoice ? (
+    <UserVoiceCard 
+      voice={userVoice}
+      isSelected={profile.default_voice === 'custom'}
+      onSelect={...}
+      onDelete={...}
+      onPreview={...}
+    />
+  ) : (
+    <AddVoiceCard onClick={() => setShowRecordingDialog(true)} />
+  )}
+  
+  {/* AI VOICES section (existing) */}
+  <p className="uppercase tracking-wider mb-3">AI Voices</p>
+  <div className="grid grid-cols-2 gap-3">
+    {/* Existing voice cards */}
+  </div>
+</div>
 
-**Purpose:** Orchestrator component managing accordion behavior and progressive disclosure.
-
-**State management:**
-```text
-medications: MedicationEntry[]
-expandedId: string | null
-```
-
-**Rendering logic:**
-```text
-IF only 1 medication exists:
-  - Render MedicationExpandedForm (always expanded, no collapse option)
-  - Show "+ Add another medication" link below
-
-ELSE IF multiple medications exist:
-  - FOR each medication:
-    - IF medication.id === expandedId:
-      - Render MedicationExpandedForm (with collapse/remove options)
-    - ELSE:
-      - Render MedicationChip (clickable to expand)
-  - Show "+ Add another medication" link at bottom
-```
-
-**Key change from original spec:** The "+ Add another medication" link is **always visible**, regardless of whether the first medication has a name entered. Users can click it when ready or simply ignore it.
-
-**Behaviors:**
-- Clicking a chip sets expandedId to that medication (auto-collapses current)
-- Clicking "Done" or adding new medication collapses current
-- Adding new: Create entry, set as expanded
-- Removing: If expanded, expand previous/first one
-
-**"+ Add another medication" link styling:**
-- `text-sm text-primary hover:text-primary/80 font-medium`
-- Small Plus icon from lucide-react
-- Position: Below form/chips with `mt-3`
-- **Always visible** - no conditional display based on medication name
-
-**Props:**
-```text
-medications: MedicationEntry[]
-onChange: (medications: MedicationEntry[]) => void
-```
-
-### 5. MedicationReminderForm Modifications
-
-**State changes:**
-```text
-// Remove:
-medicationName, dosage, instruction individual states
-
-// Add:
-medications: MedicationEntry[] = [{ id: crypto.randomUUID(), name: '', instruction: 'none' }]
-```
-
-**Component replacement:**
-Replace the "Medication Details" section content with:
-```text
-<MedicationList
-  medications={medications}
-  onChange={setMedications}
+<VoiceRecordingDialog 
+  open={showRecordingDialog} 
+  onOpenChange={setShowRecordingDialog}
+  onSuccess={() => refetchUserVoice()}
 />
 ```
 
-**Auto-generated message update:**
+**"Add Your Voice" card design:**
+- Dashed border: `border-2 border-dashed border-muted-foreground/30`
+- Microphone icon centered
+- Text: "Add Your Voice"
+- Subtext: "Record your voice to make reminders more personal"
+
+#### Reminder Form Updates
+
+Replace hardcoded voice selection grids with `<VoiceSelector />` component in:
+- `CreateReminderDialog.tsx`
+- `MedicationReminderForm.tsx`
+- `EditReminderDialog.tsx`
+
+Voice state changes:
+- Current: `voice: 'friendly_female' | 'friendly_male'`
+- New: `voice: 'friendly_female' | 'friendly_male' | 'custom'`
+- New: `customVoiceId?: string`
+
+When submitting reminder:
+- If `voice === 'custom'`, set `custom_voice_id` to the user's voice ID
+- Otherwise, set `custom_voice_id` to null
+
+### 6. Make-Call Edge Function Updates
+
+Modify `make-call/index.ts` to handle custom voices:
+
 ```text
-const autoGeneratedMessage = useMemo(() => {
-  const validMedications = medications.filter(m => m.name.trim());
-  return generateMultiMedicationMessage(recipientName, validMedications);
-}, [recipientName, medications]);
+Current voice mapping:
+const voiceMap = {
+  friendly_female: "caMurMrvWp0v3NFJALhl",
+  friendly_male: "VR6AewLTigWG4xSOukaG",
+};
+
+New logic:
+1. Check if voice === 'custom' and custom_voice_id exists
+2. If so, fetch user_voices record to get elevenlabs_voice_id
+3. Use that voice ID for TTS
+4. Fallback to friendly_female if voice lookup fails
 ```
-
-**Validation update:**
-```text
-const validMedications = medications.filter(m => m.name.trim());
-if (validMedications.length === 0) {
-  toast({ title: "Please enter at least one medication name", variant: "destructive" });
-  return;
-}
-```
-
-### 6. MessagePreview Enhancement
-
-**New optional prop:** `medicationCount?: number`
-
-**Subtle hint for 3+ medications:**
-```text
-{medicationCount >= 3 && (
-  <p className="text-xs text-muted-foreground flex items-center gap-1 mb-2">
-    <Info className="h-3 w-3" />
-    {medicationCount >= 5 
-      ? "Summary message for brevity" 
-      : "Dosages included, instructions summarized"}
-  </p>
-)}
-```
-
----
-
-## Visual Design Principles Followed
-
-1. **Minimal by Default**: Initial form looks exactly like current single-medication form
-2. **Always Available**: "+ Add another medication" link is always visible (not conditional)
-3. **Compact Chips**: Small, unobtrusive pills with horizontal flow that wraps
-4. **Clean Transitions**: Use `animate-in fade-in` for smooth expand/collapse
-5. **Single Focus**: Only one medication expanded at a time
-6. **No Numbering**: No "#1", "#2" labels - chips are self-explanatory
-7. **No Confirmation**: Direct removal without confirmation dialog
 
 ---
 
 ## Implementation Order
 
-1. **Phase 1: Data Layer**
-   - Add MedicationEntry interface and DOSAGE_UNITS to medicationUtils.ts
-   - Add formatMedicationDosage helper function
-   - Add generateMultiMedicationMessage function
+### Phase 1: Database & Types
+1. Create migration for `user_voices` table
+2. Add `custom_voice_id` column to reminders
+3. Wait for types regeneration
 
-2. **Phase 2: UI Components**
-   - Create MedicationChip.tsx
-   - Create MedicationExpandedForm.tsx
-   - Create MedicationList.tsx
+### Phase 2: Edge Functions
+1. Create `create-voice-clone/index.ts`
+2. Create `preview-voice/index.ts`
+3. Create `delete-voice-clone/index.ts`
+4. Deploy and test each function
 
-3. **Phase 3: Integration**
-   - Update MedicationReminderForm.tsx to use new components
-   - Update MessagePreview.tsx with medication count hint
+### Phase 3: Hooks
+1. Create `useAudioRecorder.ts`
+2. Create `useUserVoice.ts`
+3. Test recording and API integration
+
+### Phase 4: UI Components
+1. Create `VoiceRecordingDialog.tsx` (all 5 steps)
+2. Create `UserVoiceCard.tsx`
+3. Update `Voices.tsx` with new sections
+
+### Phase 5: Voice Selection Integration
+1. Create `VoiceSelector.tsx`
+2. Update `CreateReminderDialog.tsx`
+3. Update `MedicationReminderForm.tsx`
+4. Update `EditReminderDialog.tsx`
+
+### Phase 6: Call Integration
+1. Update `make-call/index.ts` for custom voice support
+2. Test end-to-end flow
+
+---
+
+## Error Handling Summary
+
+| Scenario | User Message |
+|----------|--------------|
+| Microphone permission denied | "Unable to access microphone. Please check your browser permissions." |
+| Recording < 10 seconds | "Recording must be at least 10 seconds. You recorded X seconds." |
+| ElevenLabs API failure | "We couldn't create your voice. Please try again." |
+| Network error | "Connection error. Please check your internet and try again." |
+| Voice deleted but reminder uses it | Automatically fallback to friendly_female voice |
+
+---
+
+## Security Considerations
+
+1. **RLS policies** ensure users can only access their own voices
+2. **JWT validation** in all edge functions
+3. **User ownership verification** before delete operations
+4. **Consent checkbox** required before voice cloning
+5. **ElevenLabs API key** stored securely as edge function secret
 
 ---
 
 ## What Will NOT Change
 
+- Existing AI voice functionality
+- Current voice preview placeholder behavior
+- Filter pills on Voices page (decorative)
+- Any call history or reminder viewing features
 - Contact picker functionality
-- Phone number input and validation
-- Schedule section (date, repeat, time presets)
-- Voice selection
-- Message preview editing capability
-- Sticky submit button behavior
-- All existing styling and animations
-
