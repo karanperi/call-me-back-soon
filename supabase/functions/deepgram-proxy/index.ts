@@ -48,9 +48,13 @@ Deno.serve((req) => {
 
     // Forward Deepgram transcription responses to the browser
     deepgramSocket.onmessage = (event) => {
+      console.log("Deepgram message received, length:", event.data?.length || 0);
       if (clientSocket.readyState === WebSocket.OPEN) {
         // Forward the transcript JSON as-is to the browser
         clientSocket.send(event.data);
+        console.log("Forwarded to client");
+      } else {
+        console.log("Client not ready, state:", clientSocket.readyState);
       }
     };
 
@@ -70,7 +74,10 @@ Deno.serve((req) => {
   // Forward audio data from browser to Deepgram
   clientSocket.onmessage = (event) => {
     if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
+      console.log("Forwarding audio chunk, size:", event.data?.size || event.data?.byteLength || 0);
       deepgramSocket.send(event.data);
+    } else {
+      console.log("Deepgram not ready, state:", deepgramSocket?.readyState);
     }
   };
 
