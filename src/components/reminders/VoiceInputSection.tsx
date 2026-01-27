@@ -249,6 +249,7 @@ export function VoiceInputSection({
                   </div>
                 </div>
                 <Button
+                  type="button"
                   onClick={() => {
                     setStatus('idle');
                     clearTranscript();
@@ -292,6 +293,7 @@ export function VoiceInputSection({
                 
                 {/* Stop button */}
                 <Button
+                  type="button"
                   onClick={handleMicClick}
                   variant="destructive"
                   className="w-full"
@@ -317,6 +319,7 @@ export function VoiceInputSection({
               // Idle state (ready to record)
               <div className="space-y-4">
                 <Button
+                  type="button"
                   onClick={handleMicClick}
                   className="w-full"
                   size="lg"
