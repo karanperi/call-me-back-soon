@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarIcon, Lightbulb } from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 import { ContactPickerIcon } from "@/components/contacts/ContactPickerIcon";
 import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { MessagePreview } from "./MessagePreview";
@@ -180,9 +180,17 @@ export const MedicationReminderForm = ({
   return (
     <form onSubmit={handleSubmit} className="p-4 space-y-6 overflow-x-hidden">
       {/* Tip Note */}
-      <div className="flex items-start gap-2.5 p-3 rounded-lg bg-primary/5 border border-primary/10">
-        <Lightbulb className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-        <p className="text-sm text-muted-foreground">
+      <div className="flex items-start gap-3 p-3 rounded-lg bg-accent border border-border">
+        {/* Two-tone pill icon */}
+        <svg 
+          className="h-5 w-5 mt-0.5 flex-shrink-0" 
+          viewBox="0 0 24 24" 
+          fill="none"
+        >
+          <rect x="3" y="10" width="18" height="8" rx="4" className="fill-destructive" />
+          <rect x="3" y="6" width="18" height="8" rx="4" className="fill-white stroke-border" strokeWidth="1" />
+        </svg>
+        <p className="text-sm font-medium text-foreground">
           Create one reminder per time slot. You can add multiple medications to each reminder.
         </p>
       </div>
