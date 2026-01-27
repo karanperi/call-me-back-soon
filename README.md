@@ -1,73 +1,175 @@
-# Welcome to your Lovable project
+# Yaad - Voice Reminder Calls
 
-## Project info
+<p align="center">
+  <img src="public/yaad-logo.png" alt="Yaad Logo" width="120" />
+</p>
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+<p align="center">
+  <strong>Stay connected with the people who matter most</strong>
+</p>
 
-## How can I edit this code?
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#documentation">Documentation</a> •
+  <a href="#contributing">Contributing</a>
+</p>
 
-There are several ways of editing your application.
+---
 
-**Use Lovable**
+## What is Yaad?
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+**Yaad** (meaning "memory" in Hindi/Urdu) is a voice reminder application that helps you stay connected with loved ones through personalized phone calls. Schedule reminders for yourself or others, and Yaad will call at the scheduled time with your custom message delivered in a natural, AI-generated voice.
 
-Changes made via Lovable will be committed automatically to this repo.
+### Why Yaad?
 
-**Use your preferred IDE**
+- 📞 **Voice Calls, Not Texts**: Sometimes a call means more than a message
+- 🎙️ **Custom Voice Cloning**: Create a voice that sounds like you or a loved one
+- ⏰ **Flexible Scheduling**: One-time, daily, or weekly reminders
+- 👨‍👩‍👧‍👦 **Family-Friendly**: Perfect for reminding elderly parents about medications or checking in
+- 🌍 **International Support**: Works with phone numbers worldwide
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Features
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Core Features
+- ✅ Schedule voice reminder calls
+- ✅ Choose from preset voices (friendly female/male)
+- ✅ Clone your own voice for personalized calls
+- ✅ Recurring reminders (daily, weekly)
+- ✅ Call history tracking
+- ✅ Contact management
 
-Follow these steps:
+### Voice Options
+- **Preset Voices**: Professional, natural-sounding AI voices
+- **Custom Voice Clone**: Record 30 seconds of audio to create your own voice
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Integrations
+- **Twilio**: Reliable phone call delivery
+- **ElevenLabs**: Advanced AI voice synthesis and cloning
+- **Supabase**: Secure authentication and data storage
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+## Screenshots
 
-# Step 3: Install the necessary dependencies.
-npm i
+<!-- Add screenshots here -->
+| Home | Schedule Reminder | Voice Cloning |
+|------|-------------------|---------------|
+| ![Home](docs/screenshots/home.png) | ![Schedule](docs/screenshots/schedule.png) | ![Voice](docs/screenshots/voice.png) |
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
+## Quick Start
+
+### Prerequisites
+- Node.js 18+ 
+- npm or bun
+- Supabase account
+- Twilio account
+- ElevenLabs account
+
+### Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/karanperi/call-me-back-soon.git
+cd call-me-back-soon
+
+# Install dependencies
+npm install
+
+# Copy environment variables
+cp .env.example .env
+
+# Start development server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+See [SETUP.md](SETUP.md) for detailed setup instructions.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Documentation
 
-**Use GitHub Codespaces**
+| Document | Description |
+|----------|-------------|
+| [SETUP.md](SETUP.md) | Local development setup |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture overview |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guidelines |
+| [docs/API.md](docs/API.md) | Edge function API reference |
+| [docs/DATABASE.md](docs/DATABASE.md) | Database schema |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Deployment guide |
+| [docs/TESTING.md](docs/TESTING.md) | Testing strategy |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Common issues |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Tech Stack
 
-## What technologies are used for this project?
+### Frontend
+- **React 18** - UI framework
+- **TypeScript** - Type safety
+- **Vite** - Build tool
+- **Tailwind CSS** - Styling
+- **shadcn/ui** - Component library
+- **React Router** - Navigation
+- **TanStack Query** - Data fetching
 
-This project is built with:
+### Backend
+- **Supabase** - Database, Auth, Storage, Edge Functions
+- **PostgreSQL** - Database (via Supabase)
+- **Deno** - Edge function runtime
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### External Services
+- **Twilio** - Voice calls
+- **ElevenLabs** - AI voice synthesis
 
-## How can I deploy this project?
+## Project Structure
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+```
+call-me-back-soon/
+├── src/
+│   ├── components/       # React components
+│   │   ├── auth/         # Authentication components
+│   │   ├── contacts/     # Contact management
+│   │   ├── history/      # Call history
+│   │   ├── layout/       # Layout components
+│   │   ├── phone/        # Phone input components
+│   │   ├── reminders/    # Reminder scheduling
+│   │   ├── ui/           # shadcn/ui components
+│   │   └── voices/       # Voice selection/cloning
+│   ├── config/           # App configuration
+│   ├── hooks/            # Custom React hooks
+│   ├── integrations/     # Supabase client
+│   ├── lib/              # Utilities
+│   ├── pages/            # Route pages
+│   └── test/             # Test utilities
+├── supabase/
+│   ├── functions/        # Edge functions
+│   │   ├── check-reminders/
+│   │   ├── create-voice-clone/
+│   │   ├── delete-voice-clone/
+│   │   ├── make-call/
+│   │   ├── parse-voice-reminder/
+│   │   ├── preview-voice/
+│   │   └── twilio-status-callback/
+│   └── migrations/       # Database migrations
+└── docs/                 # Documentation
+```
 
-## Can I connect a custom domain to my Lovable project?
+## Contributing
 
-Yes, you can!
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Security
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+For security concerns, please see [SECURITY.md](SECURITY.md).
+
+## License
+
+This project is licensed under the MIT License - see [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- [Lovable](https://lovable.dev) - AI-powered development
+- [Twilio](https://twilio.com) - Voice API
+- [ElevenLabs](https://elevenlabs.io) - Voice AI
+- [Supabase](https://supabase.com) - Backend infrastructure
+
+---
+
+<p align="center">
+  Made with ❤️ for staying connected
+</p>
