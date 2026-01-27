@@ -181,14 +181,25 @@ export const MedicationReminderForm = ({
     <form onSubmit={handleSubmit} className="p-4 space-y-6 overflow-x-hidden">
       {/* Tip Note */}
       <div className="flex items-start gap-3 p-3 rounded-lg bg-accent border border-border">
-        {/* Two-tone pill icon */}
+        {/* Two-tone vertical pill icon, tilted 30° right */}
         <svg 
-          className="h-5 w-5 mt-0.5 flex-shrink-0" 
+          className="h-6 w-6 flex-shrink-0" 
           viewBox="0 0 24 24" 
           fill="none"
+          style={{ transform: 'rotate(30deg)' }}
         >
-          <rect x="3" y="10" width="18" height="8" rx="4" className="fill-destructive" />
-          <rect x="3" y="6" width="18" height="8" rx="4" className="fill-white stroke-border" strokeWidth="1" />
+          {/* White top half */}
+          <path 
+            d="M8 12V6C8 3.79 9.79 2 12 2C14.21 2 16 3.79 16 6V12H8Z" 
+            className="fill-white stroke-muted-foreground" 
+            strokeWidth="1.5"
+          />
+          {/* Red bottom half */}
+          <path 
+            d="M8 12V18C8 20.21 9.79 22 12 22C14.21 22 16 20.21 16 18V12H8Z" 
+            className="fill-destructive stroke-destructive" 
+            strokeWidth="1.5"
+          />
         </svg>
         <p className="text-sm font-medium text-foreground">
           Create one reminder per time slot. You can add multiple medications to each reminder.
