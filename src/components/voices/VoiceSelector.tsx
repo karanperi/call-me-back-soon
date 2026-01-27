@@ -68,62 +68,40 @@ export const VoiceSelector = ({
 
   const isCustomSelected = selectedVoice === "custom" && customVoiceId === userVoice?.id;
 
+  // Custom voice feature is disabled - Coming Soon
+  const isCustomVoiceDisabled = true;
+
   return (
     <div className="space-y-4">
-      {/* My Voices section - only show if user has a ready voice */}
-      {userVoice && userVoice.status === "ready" && (
-        <>
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            My Voices
-          </p>
-          <button
-            type="button"
-            onClick={() => onSelect("custom", userVoice.id)}
-            className={cn(
-              "w-full p-4 rounded-lg border-2 transition-all text-left",
-              isCustomSelected
-                ? "border-primary bg-primary/5"
-                : "border-border hover:border-primary/50"
-            )}
-          >
-            <div className="flex items-center gap-4">
-              <div className="relative">
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-200 to-emerald-200" />
-                <button
-                  type="button"
-                  onClick={handlePreviewCustomVoice}
-                  disabled={previewVoice.isPending}
-                  className="absolute -bottom-1 -right-1 w-7 h-7 bg-primary rounded-full flex items-center justify-center shadow-md hover:bg-primary/90 transition-colors disabled:opacity-50"
-                >
-                  {previewVoice.isPending ? (
-                    <Loader2 className="w-3 h-3 text-primary-foreground animate-spin" />
-                  ) : isPlaying ? (
-                    <Pause className="w-3 h-3 text-primary-foreground" />
-                  ) : (
-                    <Play className="w-3 h-3 text-primary-foreground ml-0.5" />
-                  )}
-                </button>
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-foreground truncate">{userVoice.name}</p>
-                <p className="text-xs text-muted-foreground">Your Voice</p>
-              </div>
-              {isCustomSelected && (
-                <span className="text-xs font-medium text-primary">Selected</span>
-              )}
-            </div>
-          </button>
-          <audio
-            ref={audioRef}
-            onEnded={() => setIsPlaying(false)}
-            onPause={() => setIsPlaying(false)}
-          />
-        </>
-      )}
+      {/* My Voices section - Coming Soon (always show disabled state) */}
+      <div className="flex items-center gap-2">
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          My Voices
+        </p>
+        <span className="text-[10px] font-semibold uppercase tracking-wider bg-primary/10 text-primary px-1.5 py-0.5 rounded-full">
+          Soon
+        </span>
+      </div>
+      <div
+        className="w-full p-4 rounded-lg border-2 border-dashed border-muted-foreground/20 text-left opacity-50 cursor-not-allowed"
+      >
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-full bg-gradient-to-br from-violet-200/50 to-emerald-200/50" />
+          <div className="flex-1 min-w-0">
+            <p className="font-medium text-muted-foreground">Your Voice</p>
+            <p className="text-xs text-muted-foreground/70">Coming soon</p>
+          </div>
+        </div>
+      </div>
+      <audio
+        ref={audioRef}
+        onEnded={() => setIsPlaying(false)}
+        onPause={() => setIsPlaying(false)}
+      />
 
       {/* AI Voices section */}
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        {userVoice && userVoice.status === "ready" ? "AI Voices" : "Voice"}
+        AI Voices
       </p>
       <div className="grid grid-cols-2 gap-3">
         {AI_VOICES.map((voice) => (

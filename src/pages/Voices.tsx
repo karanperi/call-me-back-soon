@@ -116,37 +116,30 @@ const Voices = () => {
           ))}
         </div>
 
-        {/* MY VOICES section */}
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-          My Voices
-        </p>
+        {/* MY VOICES section - Coming Soon */}
+        <div className="flex items-center gap-2 mb-3">
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            My Voices
+          </p>
+          <span className="text-[10px] font-semibold uppercase tracking-wider bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+            Coming Soon
+          </span>
+        </div>
 
-        {userVoice ? (
-          <div className="mb-6">
-            <UserVoiceCard
-              voice={userVoice}
-              isSelected={activeVoice === "custom"}
-              onSelect={() => handleSelectVoice("custom")}
-              onRetry={() => setShowRecordingDialog(true)}
-            />
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowRecordingDialog(true)}
-            className="w-full mb-6 p-6 rounded-lg border-2 border-dashed border-muted-foreground/30 hover:border-primary/50 transition-colors text-center group"
-          >
-            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-secondary flex items-center justify-center group-hover:bg-primary/10 transition-colors">
-              <div className="relative">
-                <Mic className="w-7 h-7 text-muted-foreground group-hover:text-primary transition-colors" />
-                <Plus className="w-4 h-4 absolute -bottom-1 -right-1 text-muted-foreground group-hover:text-primary transition-colors" />
-              </div>
+        <div
+          className="w-full mb-6 p-6 rounded-lg border-2 border-dashed border-muted-foreground/20 text-center opacity-60 cursor-not-allowed"
+        >
+          <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-secondary/50 flex items-center justify-center">
+            <div className="relative">
+              <Mic className="w-7 h-7 text-muted-foreground/50" />
+              <Plus className="w-4 h-4 absolute -bottom-1 -right-1 text-muted-foreground/50" />
             </div>
-            <p className="font-medium text-foreground mb-1">Add Your Voice</p>
-            <p className="text-sm text-muted-foreground">
-              Record your voice to make reminders more personal
-            </p>
-          </button>
-        )}
+          </div>
+          <p className="font-medium text-muted-foreground mb-1">Add Your Voice</p>
+          <p className="text-sm text-muted-foreground/70">
+            Clone your voice to make reminders more personal
+          </p>
+        </div>
 
         {/* AI VOICES section */}
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
