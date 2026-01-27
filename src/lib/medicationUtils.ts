@@ -216,34 +216,17 @@ export const TIME_PRESETS: TimePreset[] = [
 ];
 
 // Repeat/frequency options for medication reminders
-export type RepeatKey = "daily" | "twice_daily" | "three_times_daily" | "weekly" | "once";
+export type RepeatKey = "daily" | "weekly" | "once";
 
 export interface RepeatOption {
   key: RepeatKey;
   label: string;
-  description?: string;
-  createMultiple: boolean;
-  times?: string[]; // Times for multiple reminders (24-hour format)
 }
 
 export const REPEAT_OPTIONS: RepeatOption[] = [
-  { key: "daily", label: "Daily", createMultiple: false },
-  { 
-    key: "twice_daily", 
-    label: "Twice daily", 
-    description: "9:00 AM and 6:00 PM",
-    createMultiple: true,
-    times: ["09:00", "18:00"],
-  },
-  { 
-    key: "three_times_daily", 
-    label: "Three times daily", 
-    description: "9:00 AM, 2:00 PM, and 6:00 PM",
-    createMultiple: true,
-    times: ["09:00", "14:00", "18:00"],
-  },
-  { key: "weekly", label: "Weekly", createMultiple: false },
-  { key: "once", label: "Just once", createMultiple: false },
+  { key: "daily", label: "Daily" },
+  { key: "weekly", label: "Weekly" },
+  { key: "once", label: "Just once" },
 ];
 
 /**
@@ -285,8 +268,6 @@ export function generateMedicationMessage(
 export function getDbFrequency(repeat: RepeatKey): string {
   switch (repeat) {
     case "daily":
-    case "twice_daily":
-    case "three_times_daily":
       return "daily";
     case "weekly":
       return "weekly";
