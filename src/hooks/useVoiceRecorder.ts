@@ -90,21 +90,30 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   }, []);
 
   const stopRecording = useCallback(() => {
+    console.log('[Voice] stopRecording called, isRecording:', isRecording);
     if (!isRecording) return;
+    
+    // Capture transcript BEFORE cleanup
+    const finalText = finalTranscriptRef.current.trim();
+    console.log('[Voice] Final transcript before cleanup:', finalText);
     
     setIsRecording(false);
     setIsProcessing(true);
     cleanup();
 
-    // Wait a moment for final transcripts to arrive, then call onTranscriptFinal
+    // Wait a moment for any pending final transcripts, then call onTranscriptFinal
     setTimeout(() => {
-      const finalText = finalTranscriptRef.current.trim();
+      // Re-check in case more came in
+      const latestText = finalTranscriptRef.current.trim() || finalText;
+      console.log('[Voice] Calling onTranscriptFinal with:', latestText);
       setIsProcessing(false);
-      onTranscriptFinal?.(finalText);
+      onTranscriptFinal?.(latestText);
     }, 500);
   }, [isRecording, cleanup, onTranscriptFinal]);
 
   const startRecording = useCallback(async () => {
+    console.log('[Voice] Starting recording...');
+    
     try {
       setError(null);
       setTranscript('');
@@ -114,6 +123,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       setRemainingSeconds(maxDurationSeconds);
 
       // Request microphone permission
+      console.log('[Voice] Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -122,14 +132,17 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
           noiseSuppression: true,
         }
       });
+      console.log('[Voice] Microphone access granted');
       streamRef.current = stream;
 
       // Connect to backend WebSocket proxy (keeps API key server-side)
-      const ws = new WebSocket(getProxyWsUrl(language));
+      const wsUrl = getProxyWsUrl(language);
+      console.log('[Voice] Connecting to WebSocket proxy:', wsUrl);
+      const ws = new WebSocket(wsUrl);
       websocketRef.current = ws;
 
       ws.onopen = () => {
-        console.log('Deepgram WebSocket connected');
+        console.log('[Voice] WebSocket connected to proxy');
         
         // Set up MediaRecorder
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -168,17 +181,21 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       };
 
       ws.onmessage = (event) => {
+        console.log('[Voice] Raw message received:', event.data.substring(0, 200));
         try {
           const data = JSON.parse(event.data);
+          console.log('[Voice] Parsed message type:', data.type, 'is_final:', data.is_final);
           
           if (data.channel?.alternatives?.[0]) {
             const alt = data.channel.alternatives[0];
             const text = alt.transcript || '';
+            console.log('[Voice] Transcript text:', text, 'is_final:', data.is_final);
             
             if (data.is_final) {
               // Final transcript - append to accumulated
               if (text.trim()) {
                 finalTranscriptRef.current = (finalTranscriptRef.current + ' ' + text).trim();
+                console.log('[Voice] Accumulated transcript:', finalTranscriptRef.current);
                 setTranscript(finalTranscriptRef.current);
                 setInterimTranscript('');
                 onTranscriptUpdate?.(finalTranscriptRef.current);
@@ -189,12 +206,12 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
             }
           }
         } catch (e) {
-          console.error('Error parsing Deepgram message:', e);
+          console.error('[Voice] Error parsing message:', e, 'Raw:', event.data);
         }
       };
 
       ws.onerror = (event) => {
-        console.error('Deepgram WebSocket error:', event);
+        console.error('[Voice] WebSocket error:', event);
         const err = new Error('Voice recognition connection failed');
         setError(err);
         onError?.(err);
@@ -203,7 +220,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       };
 
       ws.onclose = (event) => {
-        console.log('Deepgram WebSocket closed:', event.code, event.reason);
+        console.log('[Voice] WebSocket closed:', event.code, event.reason);
       };
 
     } catch (err) {

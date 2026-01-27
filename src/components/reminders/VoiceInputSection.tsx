@@ -46,16 +46,20 @@ export function VoiceInputSection({
   const parser = useVoiceReminderParser();
   
   const handleTranscriptFinal = async (transcript: string) => {
+    console.log('[VoiceInput] handleTranscriptFinal called with:', transcript);
+    
     if (!transcript.trim()) {
+      console.warn('[VoiceInput] Empty transcript, returning to idle');
       setStatus('idle');
       return;
     }
     
     setStatus('processing');
+    console.log('[VoiceInput] Set status to processing, calling parser...');
     
     try {
       const result = await parser.mutateAsync(transcript);
-      
+      console.log('[VoiceInput] Parser result:', result);
       // Handle unrelated/unclear input
       if (result.data.reminder_type === 'unrelated' || result.data.reminder_type === 'unclear') {
         const newFailureCount = sessionFailureCount + 1;
@@ -105,11 +109,11 @@ export function VoiceInputSection({
       });
       
     } catch (error) {
-      console.error('Voice parsing error:', error);
+      console.error('[VoiceInput] Voice parsing error:', error);
       setStatus('idle');
       toast({
         title: "Something went wrong",
-        description: "Please try again or use the form below.",
+        description: error instanceof Error ? error.message : "Please try again or use the form below.",
         variant: "destructive"
       });
     }
