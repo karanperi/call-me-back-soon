@@ -22,12 +22,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarIcon, X, Globe } from "lucide-react";
+import { CalendarIcon, X, Globe, Info } from "lucide-react";
 import { ContactPickerIcon } from "@/components/contacts/ContactPickerIcon";
 import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { FrequencyPicker } from "./FrequencyPicker";
 import { TemplatePicker, TemplateType } from "./TemplatePicker";
 import { MedicationReminderForm } from "./MedicationReminderForm";
+import { VoiceInputSection } from "./VoiceInputSection";
 import { VoiceSelector, VoiceType } from "@/components/voices/VoiceSelector";
 import { format, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -36,6 +37,9 @@ import { toast } from "@/hooks/use-toast";
 import { useCreateReminder, useCreateMultipleReminders, ReminderInsert } from "@/hooks/useReminders";
 import { TIMEZONES, getDefaultTimezone } from "@/lib/timezones";
 import { FrequencyConfig, getDefaultConfig, configToDbFields } from "@/lib/recurrenceUtils";
+import { useVoiceDisableStatus } from "@/hooks/useVoiceDisableStatus";
+import { useContacts } from "@/hooks/useContacts";
+import { ParsedVoiceReminder } from "@/hooks/useVoiceReminderParser";
 
 export interface InitialReminderData {
   recipientName?: string;
@@ -59,6 +63,23 @@ export const CreateReminderDialog = ({
 }: CreateReminderDialogProps) => {
   // Template state
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateType>("quick");
+
+  // Voice input state (session-level - resets when dialog opens)
+  const [sessionFailureCount, setSessionFailureCount] = useState(0);
+  const [showTypeSwitch, setShowTypeSwitch] = useState(false);
+  const [switchedFromTemplate, setSwitchedFromTemplate] = useState<'quick' | 'medication' | null>(null);
+  const [voiceData, setVoiceData] = useState<ParsedVoiceReminder | null>(null);
+
+  // Global disable status (persisted in localStorage)
+  const { 
+    isVoiceDisabledGlobally, 
+    remainingDisableTime,
+    disableVoiceFor24Hours,
+    checkAndClearIfExpired,
+  } = useVoiceDisableStatus();
+
+  // Contacts for phone lookup
+  const { data: contacts } = useContacts();
 
   const getDefaultDateTime = useCallback((tz: string) => {
     const now = new Date();
@@ -118,6 +139,110 @@ export const CreateReminderDialog = ({
       if (initialData.voice) setVoice(initialData.voice);
     }
   }, [initialData, open]);
+
+  // Reset voice session state when dialog opens
+  useEffect(() => {
+    if (open) {
+      setSessionFailureCount(0);
+      setShowTypeSwitch(false);
+      setSwitchedFromTemplate(null);
+      setVoiceData(null);
+      checkAndClearIfExpired();
+    }
+  }, [open, checkAndClearIfExpired]);
+
+  // Clear form for voice input
+  const clearFormForVoice = useCallback(() => {
+    const newTz = getDefaultTimezone();
+    const newDefaults = getDefaultDateTime(newTz);
+    
+    setRecipientName("");
+    setPhoneNumber("");
+    setIsPhoneValid(false);
+    setMessage("");
+    setDate(newDefaults.date);
+    setTime(newDefaults.time);
+    setFrequencyConfig(getDefaultConfig("once", newDefaults.date));
+    setVoice("friendly_female");
+    setCustomVoiceId(null);
+    setTimezone(newTz);
+  }, [getDefaultDateTime]);
+
+  // Handle voice form fill for quick reminders
+  const handleVoiceFormFilled = useCallback((data: ParsedVoiceReminder) => {
+    // Populate recipient name
+    if (data.recipient_name) {
+      setRecipientName(data.recipient_name);
+    }
+    
+    // Populate phone number - from voice or contacts lookup
+    if (data.phone_number) {
+      setPhoneNumber(data.phone_number);
+      setIsPhoneValid(true);
+    } else if (data.recipient_name && contacts) {
+      const matchedContact = contacts.find(
+        c => c.name.toLowerCase() === data.recipient_name?.toLowerCase()
+      );
+      if (matchedContact) {
+        setPhoneNumber(matchedContact.phone_number);
+        setIsPhoneValid(true);
+      }
+    }
+    
+    // Populate schedule
+    if (data.schedule) {
+      if (data.schedule.start_date) {
+        setDate(new Date(data.schedule.start_date));
+      }
+      if (data.schedule.time) {
+        setTime(data.schedule.time);
+      }
+      
+      // Map to FrequencyConfig
+      const frequency = data.schedule.frequency || "once";
+      const newConfig = getDefaultConfig(frequency, date || new Date());
+      
+      // Apply recurrence days of week
+      if (data.schedule.recurrence_days_of_week) {
+        newConfig.daysOfWeek = data.schedule.recurrence_days_of_week;
+      }
+      
+      // Apply end conditions
+      if (data.schedule.repeat_until) {
+        newConfig.endType = 'on_date';
+        newConfig.endDate = new Date(data.schedule.repeat_until);
+      }
+      if (data.schedule.max_occurrences) {
+        newConfig.endType = 'after_count';
+        newConfig.maxOccurrences = data.schedule.max_occurrences;
+      }
+      
+      setFrequencyConfig(newConfig);
+    }
+    
+    // For quick reminders - set message
+    if (data.reminder_type === 'quick' && data.message) {
+      setMessage(data.message);
+    }
+    
+    // Store voice data for medication form if needed
+    setVoiceData(data);
+    
+    // Reset failure count on success
+    setSessionFailureCount(0);
+  }, [contacts, date]);
+
+  // Handle type switch from voice
+  const handleVoiceTypeSwitch = useCallback((detectedType: 'quick' | 'medication') => {
+    setSwitchedFromTemplate(selectedTemplate);
+    setSelectedTemplate(detectedType);
+    setShowTypeSwitch(true);
+    
+    toast({
+      title: `Switched to ${detectedType === 'medication' ? 'Medication' : 'Quick'} reminder`,
+      description: "Please review the form below.",
+    });
+  }, [selectedTemplate]);
 
   const createReminder = useCreateReminder();
   const createMultipleReminders = useCreateMultipleReminders();
@@ -264,6 +389,56 @@ export const CreateReminderDialog = ({
           selected={selectedTemplate}
           onSelect={setSelectedTemplate}
         />
+
+        {/* Voice Input Section - Only for Quick template */}
+        {selectedTemplate === "quick" && (
+          <>
+            <VoiceInputSection
+              onFormFilled={handleVoiceFormFilled}
+              onFormClear={clearFormForVoice}
+              onTypeSwitch={handleVoiceTypeSwitch}
+              currentTemplate="quick"
+              isDisabledGlobally={isVoiceDisabledGlobally}
+              disabledUntilMessage={remainingDisableTime}
+              sessionFailureCount={sessionFailureCount}
+              onSessionFailure={() => setSessionFailureCount(prev => prev + 1)}
+              onDisableFor24Hours={disableVoiceFor24Hours}
+            />
+
+            {/* Divider */}
+            <div className="relative px-4 py-2">
+              <div className="absolute inset-0 flex items-center px-4">
+                <span className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  or fill manually
+                </span>
+              </div>
+            </div>
+
+            {/* Type Switch Banner */}
+            {showTypeSwitch && switchedFromTemplate && (
+              <div className="mx-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                <div className="flex items-start gap-2">
+                  <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm text-foreground">
+                      Your voice described a {selectedTemplate} reminder, 
+                      so we switched from the {switchedFromTemplate} template.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowTypeSwitch(false)}
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
 
         {/* Conditional Form Rendering */}
         {selectedTemplate === "quick" ? (
@@ -422,6 +597,15 @@ export const CreateReminderDialog = ({
             onSubmit={handleMedicationSubmit}
             isPending={isPending}
             defaultTimezone={timezone}
+            voiceData={voiceData}
+            onVoiceFormFilled={handleVoiceFormFilled}
+            onVoiceTypeSwitch={(type) => handleVoiceTypeSwitch(type)}
+            onFormClear={clearFormForVoice}
+            isVoiceDisabledGlobally={isVoiceDisabledGlobally}
+            disabledUntilMessage={remainingDisableTime}
+            sessionFailureCount={sessionFailureCount}
+            onSessionFailure={() => setSessionFailureCount(prev => prev + 1)}
+            onDisableFor24Hours={disableVoiceFor24Hours}
           />
         )}
       </DialogContent>

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,6 +20,7 @@ import { ContactPickerIcon } from "@/components/contacts/ContactPickerIcon";
 import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { MessagePreview } from "./MessagePreview";
 import { MedicationList } from "./MedicationList";
+import { VoiceInputSection } from "./VoiceInputSection";
 import { VoiceSelector, VoiceType } from "@/components/voices/VoiceSelector";
 import { format, addMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -32,8 +33,11 @@ import {
   TIME_PRESETS,
   REPEAT_OPTIONS,
   generateMultiMedicationMessage,
+  DosageUnitKey,
+  InstructionKey,
 } from "@/lib/medicationUtils";
 import { ReminderInsert } from "@/hooks/useReminders";
+import { ParsedVoiceReminder } from "@/hooks/useVoiceReminderParser";
 
 type Voice = VoiceType;
 
@@ -41,12 +45,31 @@ interface MedicationReminderFormProps {
   onSubmit: (reminders: Omit<ReminderInsert, "user_id">[]) => Promise<void>;
   isPending: boolean;
   defaultTimezone: string;
+  // Voice integration props
+  voiceData?: ParsedVoiceReminder | null;
+  onVoiceFormFilled?: (data: ParsedVoiceReminder) => void;
+  onVoiceTypeSwitch?: (newType: 'quick') => void;
+  onFormClear?: () => void;
+  isVoiceDisabledGlobally?: boolean;
+  disabledUntilMessage?: string | null;
+  sessionFailureCount?: number;
+  onSessionFailure?: () => void;
+  onDisableFor24Hours?: () => void;
 }
 
 export const MedicationReminderForm = ({
   onSubmit,
   isPending,
   defaultTimezone,
+  voiceData,
+  onVoiceFormFilled,
+  onVoiceTypeSwitch,
+  onFormClear,
+  isVoiceDisabledGlobally = false,
+  disabledUntilMessage,
+  sessionFailureCount = 0,
+  onSessionFailure,
+  onDisableFor24Hours,
 }: MedicationReminderFormProps) => {
   // Get default date/time
   const getDefaultDateTime = useCallback(() => {
@@ -80,7 +103,83 @@ export const MedicationReminderForm = ({
   const [message, setMessage] = useState("");
   const [isManuallyEdited, setIsManuallyEdited] = useState(false);
 
+  // Reset form for voice input
+  const resetFormForVoice = useCallback(() => {
+    setRecipientName("");
+    setPhoneNumber("");
+    setIsPhoneValid(false);
+    setMedications([{ id: crypto.randomUUID(), name: '', instruction: 'none' }]);
+    setTimePreset("morning");
+    setCustomTime(getDefaultDateTime().time);
+    setRepeat("daily");
+    setDate(getDefaultDateTime().date);
+    setVoice("friendly_female");
+    setCustomVoiceId(null);
+    setMessage("");
+    setIsManuallyEdited(false);
+  }, [getDefaultDateTime]);
 
+  // Handle form clear from voice
+  const handleFormClear = useCallback(() => {
+    resetFormForVoice();
+    onFormClear?.();
+  }, [resetFormForVoice, onFormClear]);
+
+  // Populate form when voice data is provided
+  useEffect(() => {
+    if (voiceData && voiceData.reminder_type === 'medication') {
+      // Populate recipient name
+      if (voiceData.recipient_name) {
+        setRecipientName(voiceData.recipient_name);
+      }
+      
+      // Populate phone number
+      if (voiceData.phone_number) {
+        setPhoneNumber(voiceData.phone_number);
+        setIsPhoneValid(true);
+      }
+      
+      // Populate schedule
+      if (voiceData.schedule) {
+        if (voiceData.schedule.start_date) {
+          setDate(new Date(voiceData.schedule.start_date));
+        }
+        if (voiceData.schedule.time) {
+          setTimePreset('custom');
+          setCustomTime(voiceData.schedule.time);
+        }
+        if (voiceData.schedule.frequency) {
+          setRepeat(voiceData.schedule.frequency as RepeatKey);
+        }
+      }
+      
+      // Populate medications
+      if (voiceData.medications && voiceData.medications.length > 0) {
+        const medicationEntries: MedicationEntry[] = voiceData.medications.map(med => ({
+          id: crypto.randomUUID(),
+          name: med.name,
+          quantity: med.quantity,
+          unit: med.unit as DosageUnitKey,
+          instruction: med.instruction as InstructionKey,
+        }));
+        setMedications(medicationEntries);
+      }
+      
+      // Reset message manual edit flag so it regenerates
+      setIsManuallyEdited(false);
+    }
+  }, [voiceData]);
+
+  // Handle voice form fill
+  const handleVoiceFormFilled = useCallback((data: ParsedVoiceReminder) => {
+    if (data.reminder_type === 'quick') {
+      // Detected quick reminder, trigger switch to parent
+      onVoiceTypeSwitch?.('quick');
+    } else {
+      // It's a medication reminder, populate this form
+      onVoiceFormFilled?.(data);
+    }
+  }, [onVoiceFormFilled, onVoiceTypeSwitch]);
   // Auto-generated message based on all valid medications
   const validMedications = useMemo(() => 
     medications.filter(m => m.name.trim()), 
@@ -178,33 +277,59 @@ export const MedicationReminderForm = ({
   today.setHours(0, 0, 0, 0);
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 space-y-6 overflow-x-hidden">
-      {/* Tip Note */}
-      <div className="flex items-start gap-3 p-3 rounded-lg bg-accent border border-border">
-        {/* Two-tone vertical pill icon, tilted 30° right */}
-        <svg 
-          className="h-6 w-6 flex-shrink-0" 
-          viewBox="0 0 24 24" 
-          fill="none"
-          style={{ transform: 'rotate(30deg)' }}
-        >
-          {/* White top half */}
-          <path 
-            d="M8 12V6C8 3.79 9.79 2 12 2C14.21 2 16 3.79 16 6V12H8Z" 
-            className="fill-white stroke-muted-foreground" 
-            strokeWidth="1.5"
-          />
-          {/* Red bottom half */}
-          <path 
-            d="M8 12V18C8 20.21 9.79 22 12 22C14.21 22 16 20.21 16 18V12H8Z" 
-            className="fill-destructive stroke-destructive" 
-            strokeWidth="1.5"
-          />
-        </svg>
-        <p className="text-sm font-medium text-foreground">
-          Create one reminder per time slot. You can add multiple medications to each reminder.
-        </p>
+    <form onSubmit={handleSubmit} className="space-y-6 overflow-x-hidden">
+      {/* Voice Input Section */}
+      <VoiceInputSection
+        onFormFilled={handleVoiceFormFilled}
+        onFormClear={handleFormClear}
+        onTypeSwitch={onVoiceTypeSwitch}
+        currentTemplate="medication"
+        isDisabledGlobally={isVoiceDisabledGlobally}
+        disabledUntilMessage={disabledUntilMessage}
+        sessionFailureCount={sessionFailureCount}
+        onSessionFailure={() => onSessionFailure?.()}
+        onDisableFor24Hours={() => onDisableFor24Hours?.()}
+      />
+
+      {/* Divider */}
+      <div className="relative px-4 py-2">
+        <div className="absolute inset-0 flex items-center px-4">
+          <span className="w-full border-t border-border" />
+        </div>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">
+            or fill manually
+          </span>
+        </div>
       </div>
+
+      <div className="px-4 space-y-6">
+        {/* Tip Note */}
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-accent border border-border">
+          {/* Two-tone vertical pill icon, tilted 30° right */}
+          <svg 
+            className="h-6 w-6 flex-shrink-0" 
+            viewBox="0 0 24 24" 
+            fill="none"
+            style={{ transform: 'rotate(30deg)' }}
+          >
+            {/* White top half */}
+            <path 
+              d="M8 12V6C8 3.79 9.79 2 12 2C14.21 2 16 3.79 16 6V12H8Z" 
+              className="fill-white stroke-muted-foreground" 
+              strokeWidth="1.5"
+            />
+            {/* Red bottom half */}
+            <path 
+              d="M8 12V18C8 20.21 9.79 22 12 22C14.21 22 16 20.21 16 18V12H8Z" 
+              className="fill-destructive stroke-destructive" 
+              strokeWidth="1.5"
+            />
+          </svg>
+          <p className="text-sm font-medium text-foreground">
+            Create one reminder per time slot. You can add multiple medications to each reminder.
+          </p>
+        </div>
 
       {/* Recipient Details */}
       <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
@@ -363,9 +488,10 @@ export const MedicationReminderForm = ({
 
       {/* Spacer for sticky button */}
       <div className="h-20" />
+      </div>
 
       {/* Sticky Submit Button */}
-      <div className="sticky bottom-0 left-0 right-0 pt-4 pb-4 bg-background border-t border-border">
+      <div className="sticky bottom-0 left-0 right-0 pt-4 pb-4 px-4 bg-background border-t border-border">
         <Button
           type="submit"
           className="w-full h-12 text-base font-semibold"
