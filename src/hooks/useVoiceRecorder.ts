@@ -23,7 +23,13 @@ interface UseVoiceRecorderReturn {
   error: Error | null;
 }
 
-const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY;
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
+
+function getProxyWsUrl(language: string) {
+  // Prefer using configured backend URL; fallback to current origin (works in local dev)
+  const base = (SUPABASE_URL || window.location.origin).replace(/^http/, "ws");
+  return `${base}/functions/v1/deepgram-proxy?language=${encodeURIComponent(language)}`;
+}
 
 export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoiceRecorderReturn {
   const {
@@ -99,13 +105,6 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   }, [isRecording, cleanup, onTranscriptFinal]);
 
   const startRecording = useCallback(async () => {
-    if (!DEEPGRAM_API_KEY) {
-      const err = new Error('Deepgram API key not configured');
-      setError(err);
-      onError?.(err);
-      return;
-    }
-
     try {
       setError(null);
       setTranscript('');
@@ -125,10 +124,8 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       });
       streamRef.current = stream;
 
-      // Connect to Deepgram
-      const wsUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&language=${language}&smart_format=true&punctuate=true&interim_results=true&utterance_end_ms=1500`;
-      
-      const ws = new WebSocket(wsUrl, ['token', DEEPGRAM_API_KEY]);
+      // Connect to backend WebSocket proxy (keeps API key server-side)
+      const ws = new WebSocket(getProxyWsUrl(language));
       websocketRef.current = ws;
 
       ws.onopen = () => {
