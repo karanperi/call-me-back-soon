@@ -151,6 +151,18 @@ export function VoiceInputSection({
       clearTranscript();
     }
   }, [accordionValue, status, clearTranscript]);
+
+  // Show toast when no speech is detected
+  useEffect(() => {
+    if (recorderError) {
+      console.error('[VoiceInput] Recorder error:', recorderError);
+      toast({
+        title: "Microphone error",
+        description: recorderError.message || "Could not access microphone. Please check permissions.",
+        variant: "destructive"
+      });
+    }
+  }, [recorderError]);
   
   const handleMicClick = async () => {
     if (isRecording) {

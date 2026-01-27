@@ -107,9 +107,17 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       const latestText = finalTranscriptRef.current.trim() || finalText;
       console.log('[Voice] Calling onTranscriptFinal with:', latestText);
       setIsProcessing(false);
-      onTranscriptFinal?.(latestText);
+      
+      if (latestText) {
+        onTranscriptFinal?.(latestText);
+      } else {
+        // No speech detected - notify via error callback
+        const noSpeechError = new Error('No speech detected. Please try again and speak clearly.');
+        setError(noSpeechError);
+        onError?.(noSpeechError);
+      }
     }, 500);
-  }, [isRecording, cleanup, onTranscriptFinal]);
+  }, [isRecording, cleanup, onTranscriptFinal, onError]);
 
   const startRecording = useCallback(async () => {
     console.log('[Voice] Starting recording...');
@@ -156,12 +164,15 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
         mediaRecorderRef.current = mediaRecorder;
 
         mediaRecorder.ondataavailable = (event) => {
+          console.log('[Voice] Audio chunk available, size:', event.data.size);
           if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
             ws.send(event.data);
+            console.log('[Voice] Sent audio chunk to proxy');
           }
         };
 
         mediaRecorder.start(250); // Send chunks every 250ms
+        console.log('[Voice] MediaRecorder started, sending chunks every 250ms');
         setIsRecording(true);
 
         // Start countdown timer
