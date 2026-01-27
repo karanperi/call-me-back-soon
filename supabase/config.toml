@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.delete-voice-clone]
 verify_jwt = false
+
+[functions.parse-voice-reminder]
+verify_jwt = false
