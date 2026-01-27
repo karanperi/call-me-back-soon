@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarIcon, Info, ChevronDown, ChevronUp } from "lucide-react";
+import { CalendarIcon } from "lucide-react";
 import { ContactPickerIcon } from "@/components/contacts/ContactPickerIcon";
 import { InternationalPhoneInput } from "@/components/phone/InternationalPhoneInput";
 import { MessagePreview } from "./MessagePreview";
@@ -32,7 +32,6 @@ import {
   TIME_PRESETS,
   REPEAT_OPTIONS,
   generateMultiMedicationMessage,
-  getDbFrequency,
 } from "@/lib/medicationUtils";
 import { ReminderInsert } from "@/hooks/useReminders";
 
@@ -81,34 +80,6 @@ export const MedicationReminderForm = ({
   const [message, setMessage] = useState("");
   const [isManuallyEdited, setIsManuallyEdited] = useState(false);
 
-  // Custom times state for multi-time options
-  const [showCustomTimes, setShowCustomTimes] = useState(false);
-  const [customMultiTimes, setCustomMultiTimes] = useState<string[]>(["09:00", "18:00"]);
-
-  // Check if we're using multi-time repeat options
-  const isMultiTime = repeat === "twice_daily" || repeat === "three_times_daily";
-
-  // Get the default times for the current repeat option
-  const getDefaultTimes = useCallback((repeatKey: RepeatKey): string[] => {
-    const option = REPEAT_OPTIONS.find(r => r.key === repeatKey);
-    return option?.times || ["09:00", "18:00"];
-  }, []);
-
-  // Reset custom times when repeat option changes
-  const handleRepeatChange = (newRepeat: RepeatKey) => {
-    setRepeat(newRepeat);
-    setShowCustomTimes(false);
-    setCustomMultiTimes(getDefaultTimes(newRepeat));
-  };
-
-  // Update a specific custom time
-  const updateCustomTime = (index: number, value: string) => {
-    setCustomMultiTimes(prev => {
-      const updated = [...prev];
-      updated[index] = value;
-      return updated;
-    });
-  };
 
   // Auto-generated message based on all valid medications
   const validMedications = useMemo(() => 
@@ -168,49 +139,35 @@ export const MedicationReminderForm = ({
       return;
     }
 
-    const frequency = getDbFrequency(repeat);
-    const repeatOption = REPEAT_OPTIONS.find(r => r.key === repeat);
+    const frequency = repeat === "daily" ? "daily" : repeat === "weekly" ? "weekly" : "once";
 
-    // Determine which times to create reminders for
-    let timesToCreate: string[];
-    if (isMultiTime) {
-      // Use custom times if user has customized them, otherwise use defaults
-      timesToCreate = showCustomTimes ? customMultiTimes : (repeatOption?.times || getDefaultTimes(repeat));
-    } else {
-      timesToCreate = [getSelectedTime()];
-    }
-
-    // Create reminder objects
-    const reminders: Omit<ReminderInsert, "user_id">[] = timesToCreate.map(time => {
-      const [hours, minutes] = time.split(":").map(Number);
-      const localDateTime = new Date(date);
-      localDateTime.setHours(hours, minutes, 0, 0);
-      
-      // Convert from selected timezone to UTC
-      const scheduledAt = fromZonedTime(localDateTime, defaultTimezone);
-
-      return {
-        recipient_name: recipientName.trim(),
-        phone_number: phoneNumber,
-        message: message.trim(),
-        scheduled_at: scheduledAt.toISOString(),
-        frequency,
-        voice,
-        custom_voice_id: voice === "custom" ? customVoiceId : null,
-      };
-    });
-
-    // Validate at least one is in the future
-    const now = new Date();
-    const futureReminders = reminders.filter(r => new Date(r.scheduled_at) > now);
+    // Create reminder object
+    const selectedTime = getSelectedTime();
+    const [hours, minutes] = selectedTime.split(":").map(Number);
+    const localDateTime = new Date(date);
+    localDateTime.setHours(hours, minutes, 0, 0);
     
-    if (futureReminders.length === 0) {
+    // Convert from selected timezone to UTC
+    const scheduledAt = fromZonedTime(localDateTime, defaultTimezone);
+
+    const reminder: Omit<ReminderInsert, "user_id"> = {
+      recipient_name: recipientName.trim(),
+      phone_number: phoneNumber,
+      message: message.trim(),
+      scheduled_at: scheduledAt.toISOString(),
+      frequency,
+      voice,
+      custom_voice_id: voice === "custom" ? customVoiceId : null,
+    };
+
+    // Validate time is in the future
+    if (scheduledAt <= new Date()) {
       toast({ title: "Scheduled time must be in the future", variant: "destructive" });
       return;
     }
 
     try {
-      await onSubmit(futureReminders);
+      await onSubmit([reminder]);
     } catch (error) {
       // Error handling is done in parent
     }
@@ -309,7 +266,7 @@ export const MedicationReminderForm = ({
         {/* Repeat Selection */}
         <div className="space-y-2">
           <Label>Repeat</Label>
-          <Select value={repeat} onValueChange={(v) => handleRepeatChange(v as RepeatKey)}>
+          <Select value={repeat} onValueChange={(v) => setRepeat(v as RepeatKey)}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="Select frequency" />
             </SelectTrigger>
@@ -323,92 +280,34 @@ export const MedicationReminderForm = ({
           </Select>
         </div>
 
-        {/* Time Selection - Show based on repeat type */}
-        {isMultiTime ? (
-          <div className="space-y-3">
-            <div className="flex items-start gap-2 p-3 bg-primary/5 rounded-lg">
-              <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <p className="text-sm text-muted-foreground">
-                  Reminders will be set for{" "}
-                  <span className="font-medium text-foreground">
-                    {showCustomTimes 
-                      ? customMultiTimes.map(t => format(new Date(`2000-01-01T${t}`), "h:mm a")).join(" and ")
-                      : REPEAT_OPTIONS.find(r => r.key === repeat)?.description
-                    }
-                  </span>
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowCustomTimes(!showCustomTimes)}
-                  className="mt-1 text-xs text-primary hover:text-primary/80 font-medium inline-flex items-center gap-1 transition-colors"
-                >
-                  {showCustomTimes ? (
-                    <>
-                      <ChevronUp className="h-3 w-3" />
-                      Hide custom times
-                    </>
-                  ) : (
-                    <>
-                      Change these times
-                      <ChevronDown className="h-3 w-3" />
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-            
-            {/* Custom time inputs - revealed when user clicks "Change these times" */}
-            {showCustomTimes && (
-              <div className="grid grid-cols-2 gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                {customMultiTimes.map((time, index) => (
-                  <div key={index} className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">
-                      {repeat === "twice_daily" 
-                        ? (index === 0 ? "Morning" : "Evening")
-                        : (index === 0 ? "Morning" : index === 1 ? "Afternoon" : "Evening")
-                      }
-                    </Label>
-                    <Input
-                      type="time"
-                      value={time}
-                      onChange={(e) => updateCustomTime(index, e.target.value)}
-                      className="w-full"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-2">
-            <Label>When</Label>
-            <Select value={timePreset} onValueChange={(v) => setTimePreset(v as TimePresetKey)}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select time" />
-              </SelectTrigger>
-              <SelectContent className="bg-popover">
-                {TIME_PRESETS.map((preset) => (
-                  <SelectItem key={preset.key} value={preset.key}>
-                    {preset.key !== "custom" 
-                      ? `${preset.label} (${format(new Date(`2000-01-01T${preset.time}`), "h:mm a")})`
-                      : preset.label
-                    }
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {timePreset === "custom" && (
-              <Input
-                type="time"
-                value={customTime}
-                onChange={(e) => setCustomTime(e.target.value)}
-                className="w-full"
-              />
-            )}
-          </div>
-        )}
+        {/* Time Selection */}
+        <div className="space-y-2">
+          <Label>When</Label>
+          <Select value={timePreset} onValueChange={(v) => setTimePreset(v as TimePresetKey)}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Select time" />
+            </SelectTrigger>
+            <SelectContent className="bg-popover">
+              {TIME_PRESETS.map((preset) => (
+                <SelectItem key={preset.key} value={preset.key}>
+                  {preset.key !== "custom" 
+                    ? `${preset.label} (${format(new Date(`2000-01-01T${preset.time}`), "h:mm a")})`
+                    : preset.label
+                  }
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          
+          {timePreset === "custom" && (
+            <Input
+              type="time"
+              value={customTime}
+              onChange={(e) => setCustomTime(e.target.value)}
+              className="w-full"
+            />
+          )}
+        </div>
       </div>
 
       {/* Message Preview */}
