@@ -24,7 +24,6 @@
 ### Why Yaad?
 
 - 📞 **Voice Calls, Not Texts**: Sometimes a call means more than a message
-- 🎙️ **Custom Voice Cloning**: Create a voice that sounds like you or a loved one
 - ⏰ **Flexible Scheduling**: One-time, daily, or weekly reminders
 - 👨‍👩‍👧‍👦 **Family-Friendly**: Perfect for reminding elderly parents about medications or checking in
 - 🌍 **International Support**: Works with phone numbers worldwide
