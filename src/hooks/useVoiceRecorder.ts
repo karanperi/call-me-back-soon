@@ -26,7 +26,6 @@ interface UseVoiceRecorderReturn {
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 
 function getProxyWsUrl(language: string) {
-  // Prefer using configured backend URL; fallback to current origin (works in local dev)
   const base = (SUPABASE_URL || window.location.origin).replace(/^http/, "ws");
   return `${base}/functions/v1/deepgram-proxy?language=${encodeURIComponent(language)}`;
 }
@@ -54,84 +53,110 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   const websocketRef = useRef<WebSocket | null>(null);
   const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const finalTranscriptRef = useRef<string>('');
+  const waitingForFinalRef = useRef(false);
+  const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const progress = elapsedSeconds / maxDurationSeconds;
 
+  // Closes WebSocket and clears all resources
   const cleanup = useCallback(() => {
-    // Stop timer
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
 
-    // Stop media recorder
+    if (safetyTimeoutRef.current) {
+      clearTimeout(safetyTimeoutRef.current);
+      safetyTimeoutRef.current = null;
+    }
+
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {
-        console.log('MediaRecorder already stopped');
-      }
+      try { mediaRecorderRef.current.stop(); } catch (_) { /* already stopped */ }
     }
     mediaRecorderRef.current = null;
 
-    // Stop all tracks
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
 
-    // Close websocket
     if (websocketRef.current) {
       if (websocketRef.current.readyState === WebSocket.OPEN) {
         websocketRef.current.close();
       }
       websocketRef.current = null;
     }
+
+    waitingForFinalRef.current = false;
   }, []);
 
+  // Finalize: deliver transcript and clean up
+  const finalize = useCallback(() => {
+    const text = finalTranscriptRef.current.trim();
+    console.log('[Voice] finalize called with:', text);
+
+    cleanup();
+    setIsRecording(false);
+    setIsProcessing(false);
+
+    if (text) {
+      onTranscriptFinal?.(text);
+    } else {
+      const noSpeechError = new Error('No speech detected. Please try again and speak clearly.');
+      setError(noSpeechError);
+      onError?.(noSpeechError);
+    }
+  }, [cleanup, onTranscriptFinal, onError]);
+
   const stopRecording = useCallback(() => {
-    console.log('[Voice] stopRecording called, isRecording:', isRecording);
-    if (!isRecording) return;
-    
-    // Capture transcript BEFORE cleanup
-    const finalText = finalTranscriptRef.current.trim();
-    console.log('[Voice] Final transcript before cleanup:', finalText);
-    
+    console.log('[Voice] stopRecording called');
+    if (!isRecording && !waitingForFinalRef.current) return;
+
     setIsRecording(false);
     setIsProcessing(true);
-    cleanup();
+    waitingForFinalRef.current = true;
 
-    // Wait a moment for any pending final transcripts, then call onTranscriptFinal
-    setTimeout(() => {
-      // Re-check in case more came in
-      const latestText = finalTranscriptRef.current.trim() || finalText;
-      console.log('[Voice] Calling onTranscriptFinal with:', latestText);
-      setIsProcessing(false);
-      
-      if (latestText) {
-        onTranscriptFinal?.(latestText);
-      } else {
-        // No speech detected - notify via error callback
-        const noSpeechError = new Error('No speech detected. Please try again and speak clearly.');
-        setError(noSpeechError);
-        onError?.(noSpeechError);
-      }
-    }, 500);
-  }, [isRecording, cleanup, onTranscriptFinal, onError]);
+    // Stop sending audio
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+      timerIntervalRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try { mediaRecorderRef.current.stop(); } catch (_) { /* ok */ }
+    }
+    mediaRecorderRef.current = null;
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+
+    // If we already have a transcript, finalize immediately
+    if (finalTranscriptRef.current.trim()) {
+      console.log('[Voice] Already have transcript, finalizing immediately');
+      finalize();
+      return;
+    }
+
+    // Otherwise keep WebSocket open for up to 3s to receive pending transcripts
+    console.log('[Voice] Waiting up to 3s for final transcript...');
+    safetyTimeoutRef.current = setTimeout(() => {
+      console.log('[Voice] Safety timeout reached');
+      finalize();
+    }, 3000);
+  }, [isRecording, finalize]);
 
   const startRecording = useCallback(async () => {
     console.log('[Voice] Starting recording...');
-    
+
     try {
       setError(null);
       setTranscript('');
       setInterimTranscript('');
       finalTranscriptRef.current = '';
+      waitingForFinalRef.current = false;
       setElapsedSeconds(0);
       setRemainingSeconds(maxDurationSeconds);
 
-      // Request microphone permission
-      console.log('[Voice] Requesting microphone access...');
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -140,10 +165,8 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
           noiseSuppression: true,
         }
       });
-      console.log('[Voice] Microphone access granted');
       streamRef.current = stream;
 
-      // Connect to backend WebSocket proxy (keeps API key server-side)
       const wsUrl = getProxyWsUrl(language);
       console.log('[Voice] Connecting to WebSocket proxy:', wsUrl);
       const ws = new WebSocket(wsUrl);
@@ -151,8 +174,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
 
       ws.onopen = () => {
         console.log('[Voice] WebSocket connected to proxy');
-        
-        // Set up MediaRecorder
+
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
           ? 'audio/webm;codecs=opus'
           : 'audio/webm';
@@ -164,65 +186,61 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
         mediaRecorderRef.current = mediaRecorder;
 
         mediaRecorder.ondataavailable = (event) => {
-          console.log('[Voice] Audio chunk available, size:', event.data.size);
           if (event.data.size > 0 && ws.readyState === WebSocket.OPEN) {
             ws.send(event.data);
-            console.log('[Voice] Sent audio chunk to proxy');
           }
         };
 
-        mediaRecorder.start(250); // Send chunks every 250ms
-        console.log('[Voice] MediaRecorder started, sending chunks every 250ms');
+        mediaRecorder.start(250);
         setIsRecording(true);
 
-        // Start countdown timer
         timerIntervalRef.current = setInterval(() => {
           setElapsedSeconds(prev => {
             const newElapsed = prev + 1;
             setRemainingSeconds(maxDurationSeconds - newElapsed);
-
             if (newElapsed >= maxDurationSeconds) {
               stopRecording();
               onTimeUp?.();
             }
-
             return newElapsed;
           });
         }, 1000);
       };
 
       ws.onmessage = (event) => {
-        console.log('[Voice] Raw message received:', event.data.substring(0, 200));
         try {
           const data = JSON.parse(event.data);
-          console.log('[Voice] Parsed message type:', data.type, 'is_final:', data.is_final);
-          
+
           if (data.channel?.alternatives?.[0]) {
-            const alt = data.channel.alternatives[0];
-            const text = alt.transcript || '';
-            console.log('[Voice] Transcript text:', text, 'is_final:', data.is_final);
-            
+            const text = data.channel.alternatives[0].transcript || '';
+
             if (data.is_final) {
-              // Final transcript - append to accumulated
               if (text.trim()) {
                 finalTranscriptRef.current = (finalTranscriptRef.current + ' ' + text).trim();
-                console.log('[Voice] Accumulated transcript:', finalTranscriptRef.current);
                 setTranscript(finalTranscriptRef.current);
                 setInterimTranscript('');
                 onTranscriptUpdate?.(finalTranscriptRef.current);
+
+                // If we're in graceful shutdown, finalize now
+                if (waitingForFinalRef.current) {
+                  console.log('[Voice] Got final transcript during shutdown, finalizing');
+                  if (safetyTimeoutRef.current) {
+                    clearTimeout(safetyTimeoutRef.current);
+                    safetyTimeoutRef.current = null;
+                  }
+                  finalize();
+                }
               }
             } else {
-              // Interim transcript
               setInterimTranscript(text);
             }
           }
         } catch (e) {
-          console.error('[Voice] Error parsing message:', e, 'Raw:', event.data);
+          console.error('[Voice] Error parsing message:', e);
         }
       };
 
-      ws.onerror = (event) => {
-        console.error('[Voice] WebSocket error:', event);
+      ws.onerror = () => {
         const err = new Error('Voice recognition connection failed');
         setError(err);
         onError?.(err);
@@ -232,21 +250,22 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
 
       ws.onclose = (event) => {
         console.log('[Voice] WebSocket closed:', event.code, event.reason);
+        // If we're waiting for a final and the socket closed, finalize with what we have
+        if (waitingForFinalRef.current) {
+          finalize();
+        }
       };
-
     } catch (err) {
       console.error('Error starting recording:', err);
       const error = err instanceof Error ? err : new Error('Failed to start recording');
-      
       if (error.name === 'NotAllowedError') {
         error.message = 'Microphone permission denied. Please allow microphone access.';
       }
-      
       setError(error);
       onError?.(error);
       cleanup();
     }
-  }, [maxDurationSeconds, language, onTranscriptUpdate, onTimeUp, onError, cleanup, stopRecording]);
+  }, [maxDurationSeconds, language, onTranscriptUpdate, onTimeUp, onError, cleanup, stopRecording, finalize]);
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
@@ -254,11 +273,8 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
     finalTranscriptRef.current = '';
   }, []);
 
-  // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      cleanup();
-    };
+    return () => { cleanup(); };
   }, [cleanup]);
 
   return {
