@@ -3,7 +3,6 @@
 const DEEPGRAM_API_KEY = Deno.env.get("DEEPGRAM_API_KEY");
 
 Deno.serve((req) => {
-  // Only handle WebSocket upgrades
   const upgrade = req.headers.get("upgrade") || "";
   if (upgrade.toLowerCase() !== "websocket") {
     return new Response("Expected WebSocket upgrade", { status: 426 });
@@ -14,47 +13,42 @@ Deno.serve((req) => {
     return new Response("Server configuration error", { status: 500 });
   }
 
-  // Parse language from query params
   const url = new URL(req.url);
   const language = url.searchParams.get("language") || "en";
 
-  // Upgrade the client connection to WebSocket
   const { socket: clientSocket, response } = Deno.upgradeWebSocket(req);
 
   let deepgramSocket: WebSocket | null = null;
+  // Buffer audio chunks that arrive before Deepgram is connected
+  let audioBuffer: (string | ArrayBuffer | Blob)[] = [];
 
   clientSocket.onopen = () => {
     console.log("Client WebSocket connected, connecting to Deepgram...");
 
-    // Build Deepgram URL with parameters
     const deepgramUrl = new URL("wss://api.deepgram.com/v1/listen");
     deepgramUrl.searchParams.set("model", "nova-2");
     deepgramUrl.searchParams.set("language", language);
     deepgramUrl.searchParams.set("smart_format", "true");
     deepgramUrl.searchParams.set("punctuate", "true");
     deepgramUrl.searchParams.set("interim_results", "true");
-    // Do NOT set encoding/sample_rate — browser sends webm containers,
-    // and Deepgram auto-detects the codec from the container headers.
 
-    // Connect to Deepgram
     deepgramSocket = new WebSocket(deepgramUrl.toString(), [
       "token",
       DEEPGRAM_API_KEY,
     ]);
 
     deepgramSocket.onopen = () => {
-      console.log("Connected to Deepgram API");
+      console.log("Connected to Deepgram API, flushing", audioBuffer.length, "buffered chunks");
+      // Flush any audio that arrived while we were connecting
+      for (const chunk of audioBuffer) {
+        deepgramSocket!.send(chunk);
+      }
+      audioBuffer = [];
     };
 
-    // Forward Deepgram transcription responses to the browser
     deepgramSocket.onmessage = (event) => {
-      console.log("Deepgram message received, length:", event.data?.length || 0);
       if (clientSocket.readyState === WebSocket.OPEN) {
-        // Forward the transcript JSON as-is to the browser
         clientSocket.send(event.data);
-        console.log("Forwarded to client");
-      } else {
-        console.log("Client not ready, state:", clientSocket.readyState);
       }
     };
 
@@ -64,20 +58,19 @@ Deno.serve((req) => {
 
     deepgramSocket.onclose = (event) => {
       console.log("Deepgram WebSocket closed:", event.code, event.reason);
-      // Close client connection when Deepgram disconnects
       if (clientSocket.readyState === WebSocket.OPEN) {
         clientSocket.close(1000, "Deepgram connection closed");
       }
     };
   };
 
-  // Forward audio data from browser to Deepgram
   clientSocket.onmessage = (event) => {
     if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
-      console.log("Forwarding audio chunk, size:", event.data?.size || event.data?.byteLength || 0);
       deepgramSocket.send(event.data);
     } else {
-      console.log("Deepgram not ready, state:", deepgramSocket?.readyState);
+      // Deepgram not ready yet — buffer the chunk
+      console.log("Buffering audio chunk, Deepgram state:", deepgramSocket?.readyState);
+      audioBuffer.push(event.data);
     }
   };
 
@@ -87,11 +80,11 @@ Deno.serve((req) => {
 
   clientSocket.onclose = (event) => {
     console.log("Client WebSocket closed:", event.code, event.reason);
-    // Close Deepgram connection when client disconnects
     if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
       deepgramSocket.close(1000, "Client disconnected");
     }
     deepgramSocket = null;
+    audioBuffer = [];
   };
 
   return response;
