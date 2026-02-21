@@ -1,169 +1,92 @@
 
-# Fix: Complete Voice-to-Form Workflow
 
-## Root Cause Analysis
+# Fix: Two-Bug Race Condition in Voice Recording Pipeline
 
-The voice-to-form pipeline has a critical break at the first step:
+## Problem Summary
 
-```text
-Browser → deepgram-proxy → Deepgram API
-                ↓
-        Transcripts NOT forwarded back (!)
-                ↓
-useVoiceRecorder receives nothing
-                ↓
-Empty transcript → handleTranscriptFinal("")
-                ↓
-VoiceInputSection exits early (line 48-52)
-                ↓
-parse-voice-reminder NEVER called
-                ↓
-Form stays empty
-```
+The voice recording pipeline has two race conditions that prevent transcripts from ever reaching the browser:
 
-**Key finding**: The `deepgram-proxy` edge function is deployed (logs confirm connections) but:
-1. The source code file is **missing** from `supabase/functions/deepgram-proxy/`
-2. The function is **not registered** in `supabase/config.toml`
-3. The deployed version is **not forwarding transcription data** from Deepgram back to the browser
+1. **Proxy drops early audio**: Audio chunks arrive before Deepgram's WebSocket is open, and are silently discarded
+2. **Client closes connection too early**: `stopRecording()` immediately destroys the WebSocket, but Deepgram's transcript hasn't arrived yet
 
----
-
-## Files to Create
-
-### 1. `supabase/functions/deepgram-proxy/index.ts`
-
-A WebSocket proxy that:
-- Upgrades HTTP connections to WebSocket using Deno's native API
-- Connects to Deepgram with the server-side `DEEPGRAM_API_KEY`
-- **Bidirectional forwarding**:
-  - Browser audio chunks → Deepgram
-  - Deepgram transcripts → Browser (this is what's currently broken)
-- Proper connection cleanup on disconnect
-- Error handling with logging
-
-Key implementation requirements:
-- Use `Deno.upgradeWebSocket()` for client connection
-- Connect to `wss://api.deepgram.com/v1/listen` with parameters:
-  - `model=nova-2`
-  - `language=${lang}` (from query param)
-  - `smart_format=true`
-  - `punctuate=true`
-  - `interim_results=true`
-- Forward every Deepgram message to the browser as-is
-
----
-
-## Files to Modify
-
-### 2. `supabase/config.toml`
-
-Add the missing function registration:
+## Evidence from Logs
 
 ```text
-[functions.deepgram-proxy]
-verify_jwt = false
+Browser Console (in order):
+  [Voice] Audio chunk available, size: 630     -- chunks sending fine
+  [Voice] Sent audio chunk to proxy            -- proxy receiving them
+  ... (20+ chunks) ...
+  [Voice] stopRecording called, isRecording: true
+  [Voice] Final transcript before cleanup:     -- EMPTY! Nothing received
+  [Voice] WebSocket closed: 1005               -- Connection killed
+  [Voice] Calling onTranscriptFinal with:      -- Empty string passed
+
+Server Logs:
+  "Deepgram not ready, state: 0"               -- Early chunks DROPPED
+  "Deepgram message received, length: 409"     -- Transcript came back...
+  "Forwarded to client"                        -- ...but client already closed
 ```
 
----
+## Fix 1: Buffer Audio in Proxy Until Deepgram Ready
 
-## Complete Data Flow After Fix
+**File: `supabase/functions/deepgram-proxy/index.ts`**
+
+Add a buffer array that stores audio chunks received before Deepgram is connected. Once Deepgram's `onopen` fires, flush the buffer, then forward directly.
 
 ```text
-Step 1: Browser starts recording
-        └─> MediaRecorder captures audio chunks
-
-Step 2: Browser connects to deepgram-proxy
-        └─> wss://csenulbdattrynafibqw.supabase.co/functions/v1/deepgram-proxy
-
-Step 3: Edge Function connects to Deepgram
-        └─> wss://api.deepgram.com/v1/listen
-        └─> Uses DEEPGRAM_API_KEY from secrets
-
-Step 4: Audio flows Browser → Proxy → Deepgram
-        └─> Every 250ms chunk sent via WebSocket
-
-Step 5: Transcripts flow Deepgram → Proxy → Browser  [CURRENTLY BROKEN]
-        └─> JSON with channel.alternatives[0].transcript
-        └─> Both interim and final results
-
-Step 6: useVoiceRecorder accumulates transcripts
-        └─> finalTranscriptRef.current builds up text
-
-Step 7: User stops → handleTranscriptFinal(text)
-        └─> Text passed to VoiceInputSection
-
-Step 8: VoiceInputSection calls parser.mutateAsync(transcript)
-        └─> Invokes parse-voice-reminder edge function
-
-Step 9: Claude extracts structured data
-        └─> recipient_name, schedule, medications, etc.
-
-Step 10: Form populated via onFormFilled(data)
-         └─> handleVoiceFormFilled in CreateReminderDialog
+Changes:
+- Add audioBuffer array
+- In clientSocket.onmessage: if Deepgram not ready, push to buffer
+- In deepgramSocket.onopen: flush buffer, then clear it
+- Keep direct forwarding for chunks arriving after connection
 ```
 
----
+## Fix 2: Graceful Shutdown in Client
 
-## Technical Implementation Details
+**File: `src/hooks/useVoiceRecorder.ts`**
 
-### Deepgram Proxy Logic
+Instead of immediately closing the WebSocket on stop, keep it open to receive pending transcripts:
 
 ```text
-1. Parse query params: language (default "en")
-2. Upgrade incoming request to WebSocket
-3. Build Deepgram URL with params
-4. Connect to Deepgram with Authorization header
-5. Set up message forwarding:
-   - clientWs.onmessage → deepgramWs.send (audio)
-   - deepgramWs.onmessage → clientWs.send (transcript JSON)
-6. Handle close events from either side
-7. Log errors for debugging
+Changes to stopRecording():
+1. Stop MediaRecorder (no more audio sent)
+2. Stop the countdown timer
+3. Stop audio tracks
+4. Keep WebSocket OPEN (don't call cleanup yet)
+5. Set a 3-second timeout as safety net
+6. When a final transcript arrives via onmessage, THEN close and call onTranscriptFinal
+7. If timeout fires with no new data, use whatever was accumulated and close
 ```
 
-### Message Format Expectations
+The WebSocket `onmessage` handler already accumulates text in `finalTranscriptRef`. The fix just keeps the connection alive long enough for Deepgram to respond.
 
-Deepgram sends JSON like:
-```text
-{
-  "type": "Results",
-  "channel": {
-    "alternatives": [{
-      "transcript": "remind grandma to take her medicine at 9am",
-      "confidence": 0.98
-    }]
-  },
-  "is_final": true
-}
-```
+## Technical Details
 
-The proxy must forward this exact JSON to the browser for `useVoiceRecorder.ts` line 170-194 to parse correctly.
+### Proxy Changes (`supabase/functions/deepgram-proxy/index.ts`)
 
----
+- Declare `let audioBuffer: ArrayBuffer[] = []` alongside `deepgramSocket`
+- In `clientSocket.onmessage`: check `deepgramSocket?.readyState === WebSocket.OPEN`, if not, push `event.data` to buffer
+- In `deepgramSocket.onopen`: iterate buffer and send each chunk, then clear buffer
+- No other changes to message forwarding logic
 
-## Verification Steps
+### Client Changes (`src/hooks/useVoiceRecorder.ts`)
 
-After implementation:
+- Add a new ref `waitingForFinalRef` to track graceful shutdown state
+- In `stopRecording`:
+  - Set `waitingForFinalRef.current = true`
+  - Stop MediaRecorder and audio tracks
+  - Stop timer
+  - Do NOT close WebSocket yet
+  - Set a 3-second safety timeout that calls cleanup + onTranscriptFinal
+- In the WebSocket `onmessage` handler (inside `startRecording`):
+  - After receiving a final transcript while `waitingForFinalRef` is true, call cleanup + onTranscriptFinal and clear the safety timeout
 
-1. Open the New Reminder dialog
-2. Tap "Tap to start speaking"
-3. Speak: "Remind Mom to call me at 3pm tomorrow"
-4. Stop recording
-5. Verify:
-   - Live transcript appears during recording
-   - "Understanding your request..." shows after stop
-   - Form fields populate with: Recipient="Mom", Message="call me", Time="15:00", Date=tomorrow
-   - Toast shows "Form filled from voice"
+### Files Modified
 
----
+1. `supabase/functions/deepgram-proxy/index.ts` -- add audio buffering
+2. `src/hooks/useVoiceRecorder.ts` -- graceful shutdown with transcript wait
 
-## No Changes Required
+### No Other Files Need Changes
 
-The following components are already correctly implemented:
+The downstream pipeline (VoiceInputSection, parse-voice-reminder, CreateReminderDialog) is correctly implemented and will work once transcripts actually reach the browser.
 
-- `src/hooks/useVoiceRecorder.ts` - Message parsing logic is correct
-- `src/components/reminders/VoiceInputSection.tsx` - Flow control is correct
-- `src/hooks/useVoiceReminderParser.ts` - API call is correct
-- `supabase/functions/parse-voice-reminder/index.ts` - Claude parsing is correct
-- `src/components/reminders/CreateReminderDialog.tsx` - Form population is correct
-
-The entire downstream pipeline will work once the proxy forwards transcription data.
