@@ -85,7 +85,7 @@ export const MedicationList = ({ medications, onChange }: MedicationListProps) =
       )}
 
       {/* Expanded form for current medication */}
-      {expandedId && (
+      {expandedId && medications.find((med) => med.id === expandedId) && (
         <MedicationExpandedForm
           medication={medications.find((med) => med.id === expandedId)!}
           onChange={(updates) => handleMedicationChange(expandedId, updates)}
