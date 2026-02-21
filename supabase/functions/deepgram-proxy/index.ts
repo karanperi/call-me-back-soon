@@ -33,8 +33,8 @@ Deno.serve((req) => {
     deepgramUrl.searchParams.set("smart_format", "true");
     deepgramUrl.searchParams.set("punctuate", "true");
     deepgramUrl.searchParams.set("interim_results", "true");
-    deepgramUrl.searchParams.set("encoding", "opus");
-    deepgramUrl.searchParams.set("sample_rate", "48000");
+    // Do NOT set encoding/sample_rate — browser sends webm containers,
+    // and Deepgram auto-detects the codec from the container headers.
 
     // Connect to Deepgram
     deepgramSocket = new WebSocket(deepgramUrl.toString(), [
