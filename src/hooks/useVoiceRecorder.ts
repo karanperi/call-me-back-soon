@@ -55,58 +55,59 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   const finalTranscriptRef = useRef<string>('');
   const waitingForFinalRef = useRef(false);
   const safetyTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Store callbacks in refs to avoid hook ordering issues
+  const onTranscriptFinalRef = useRef(onTranscriptFinal);
+  const onErrorRef = useRef(onError);
 
   const progress = elapsedSeconds / maxDurationSeconds;
 
-  // Closes WebSocket and clears all resources
-  const cleanup = useCallback(() => {
+  // Keep callback refs in sync
+  onTranscriptFinalRef.current = onTranscriptFinal;
+  onErrorRef.current = onError;
+
+  const cleanupResources = useCallback(() => {
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
-
     if (safetyTimeoutRef.current) {
       clearTimeout(safetyTimeoutRef.current);
       safetyTimeoutRef.current = null;
     }
-
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       try { mediaRecorderRef.current.stop(); } catch (_) { /* already stopped */ }
     }
     mediaRecorderRef.current = null;
-
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-
     if (websocketRef.current) {
       if (websocketRef.current.readyState === WebSocket.OPEN) {
         websocketRef.current.close();
       }
       websocketRef.current = null;
     }
-
     waitingForFinalRef.current = false;
   }, []);
 
-  // Finalize: deliver transcript and clean up
+  // Plain function (not a hook) that finalizes the transcript
   const finalize = useCallback(() => {
     const text = finalTranscriptRef.current.trim();
     console.log('[Voice] finalize called with:', text);
 
-    cleanup();
+    cleanupResources();
     setIsRecording(false);
     setIsProcessing(false);
 
     if (text) {
-      onTranscriptFinal?.(text);
+      onTranscriptFinalRef.current?.(text);
     } else {
       const noSpeechError = new Error('No speech detected. Please try again and speak clearly.');
       setError(noSpeechError);
-      onError?.(noSpeechError);
+      onErrorRef.current?.(noSpeechError);
     }
-  }, [cleanup, onTranscriptFinal, onError]);
+  }, [cleanupResources]);
 
   const stopRecording = useCallback(() => {
     console.log('[Voice] stopRecording called');
@@ -116,7 +117,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
     setIsProcessing(true);
     waitingForFinalRef.current = true;
 
-    // Stop sending audio
+    // Stop sending audio but keep WS open
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
@@ -137,7 +138,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       return;
     }
 
-    // Otherwise keep WebSocket open for up to 3s to receive pending transcripts
+    // Otherwise wait up to 3s for pending transcripts
     console.log('[Voice] Waiting up to 3s for final transcript...');
     safetyTimeoutRef.current = setTimeout(() => {
       console.log('[Voice] Safety timeout reached');
@@ -147,7 +148,6 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
 
   const startRecording = useCallback(async () => {
     console.log('[Voice] Starting recording...');
-
     try {
       setError(null);
       setTranscript('');
@@ -158,31 +158,19 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       setRemainingSeconds(maxDurationSeconds);
 
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true,
-        }
+        audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
       });
       streamRef.current = stream;
 
       const wsUrl = getProxyWsUrl(language);
-      console.log('[Voice] Connecting to WebSocket proxy:', wsUrl);
       const ws = new WebSocket(wsUrl);
       websocketRef.current = ws;
 
       ws.onopen = () => {
         console.log('[Voice] WebSocket connected to proxy');
-
         const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-          ? 'audio/webm;codecs=opus'
-          : 'audio/webm';
-
-        const mediaRecorder = new MediaRecorder(stream, {
-          mimeType,
-          audioBitsPerSecond: 16000
-        });
+          ? 'audio/webm;codecs=opus' : 'audio/webm';
+        const mediaRecorder = new MediaRecorder(stream, { mimeType, audioBitsPerSecond: 16000 });
         mediaRecorderRef.current = mediaRecorder;
 
         mediaRecorder.ondataavailable = (event) => {
@@ -190,7 +178,6 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
             ws.send(event.data);
           }
         };
-
         mediaRecorder.start(250);
         setIsRecording(true);
 
@@ -210,18 +197,14 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-
           if (data.channel?.alternatives?.[0]) {
             const text = data.channel.alternatives[0].transcript || '';
-
             if (data.is_final) {
               if (text.trim()) {
                 finalTranscriptRef.current = (finalTranscriptRef.current + ' ' + text).trim();
                 setTranscript(finalTranscriptRef.current);
                 setInterimTranscript('');
                 onTranscriptUpdate?.(finalTranscriptRef.current);
-
-                // If we're in graceful shutdown, finalize now
                 if (waitingForFinalRef.current) {
                   console.log('[Voice] Got final transcript during shutdown, finalizing');
                   if (safetyTimeoutRef.current) {
@@ -243,14 +226,13 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       ws.onerror = () => {
         const err = new Error('Voice recognition connection failed');
         setError(err);
-        onError?.(err);
-        cleanup();
+        onErrorRef.current?.(err);
+        cleanupResources();
         setIsRecording(false);
       };
 
       ws.onclose = (event) => {
         console.log('[Voice] WebSocket closed:', event.code, event.reason);
-        // If we're waiting for a final and the socket closed, finalize with what we have
         if (waitingForFinalRef.current) {
           finalize();
         }
@@ -262,10 +244,10 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
         error.message = 'Microphone permission denied. Please allow microphone access.';
       }
       setError(error);
-      onError?.(error);
-      cleanup();
+      onErrorRef.current?.(error);
+      cleanupResources();
     }
-  }, [maxDurationSeconds, language, onTranscriptUpdate, onTimeUp, onError, cleanup, stopRecording, finalize]);
+  }, [maxDurationSeconds, language, onTranscriptUpdate, onTimeUp, cleanupResources, stopRecording, finalize]);
 
   const clearTranscript = useCallback(() => {
     setTranscript('');
@@ -274,20 +256,12 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
   }, []);
 
   useEffect(() => {
-    return () => { cleanup(); };
-  }, [cleanup]);
+    return () => { cleanupResources(); };
+  }, [cleanupResources]);
 
   return {
-    isRecording,
-    isProcessing,
-    transcript,
-    interimTranscript,
-    remainingSeconds,
-    elapsedSeconds,
-    progress,
-    startRecording,
-    stopRecording,
-    clearTranscript,
-    error
+    isRecording, isProcessing, transcript, interimTranscript,
+    remainingSeconds, elapsedSeconds, progress,
+    startRecording, stopRecording, clearTranscript, error
   };
 }
