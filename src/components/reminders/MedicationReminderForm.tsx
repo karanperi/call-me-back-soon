@@ -103,6 +103,9 @@ export const MedicationReminderForm = ({
   const [message, setMessage] = useState("");
   const [isManuallyEdited, setIsManuallyEdited] = useState(false);
 
+  // Voice-fill highlight state: tracks which fields need attention after voice population
+  const [voiceHighlights, setVoiceHighlights] = useState<Set<string>>(new Set());
+
   // Reset form for voice input
   const resetFormForVoice = useCallback(() => {
     setRecipientName("");
@@ -117,6 +120,7 @@ export const MedicationReminderForm = ({
     setCustomVoiceId(null);
     setMessage("");
     setIsManuallyEdited(false);
+    setVoiceHighlights(new Set());
   }, [getDefaultDateTime]);
 
   // Handle form clear from voice
@@ -167,6 +171,33 @@ export const MedicationReminderForm = ({
       
       // Reset message manual edit flag so it regenerates
       setIsManuallyEdited(false);
+
+      // Detect which tracked fields were NOT populated by voice
+      const missing = new Set<string>();
+      const fieldLabels: string[] = [];
+
+      if (!voiceData.phone_number) {
+        missing.add('phone');
+        fieldLabels.push('Phone Number');
+      }
+      if (!voiceData.schedule?.start_date && !voiceData.schedule?.time) {
+        missing.add('schedule');
+        fieldLabels.push('Date & Time');
+      }
+      // Message is auto-generated from medications, so only flag if no medications were detected
+      if (!voiceData.medications || voiceData.medications.length === 0) {
+        missing.add('message');
+        fieldLabels.push('Reminder Message');
+      }
+
+      setVoiceHighlights(missing);
+
+      if (fieldLabels.length > 0) {
+        toast({
+          title: "Some fields need your input",
+          description: `Please fill in: ${fieldLabels.join(', ')}`,
+        });
+      }
     }
   }, [voiceData]);
 
@@ -180,6 +211,25 @@ export const MedicationReminderForm = ({
       onVoiceFormFilled?.(data);
     }
   }, [onVoiceFormFilled, onVoiceTypeSwitch]);
+  // Clear individual voice highlights as fields get filled
+  useEffect(() => {
+    if (voiceHighlights.has('phone') && isPhoneValid && phoneNumber) {
+      setVoiceHighlights(prev => { const next = new Set(prev); next.delete('phone'); return next; });
+    }
+  }, [isPhoneValid, phoneNumber, voiceHighlights]);
+
+  useEffect(() => {
+    if (voiceHighlights.has('schedule') && date && (timePreset !== 'custom' || customTime)) {
+      setVoiceHighlights(prev => { const next = new Set(prev); next.delete('schedule'); return next; });
+    }
+  }, [date, timePreset, customTime, voiceHighlights]);
+
+  useEffect(() => {
+    if (voiceHighlights.has('message') && message.trim()) {
+      setVoiceHighlights(prev => { const next = new Set(prev); next.delete('message'); return next; });
+    }
+  }, [message, voiceHighlights]);
+
   // Auto-generated message based on all valid medications
   const validMedications = useMemo(() => 
     medications.filter(m => m.name.trim()), 
@@ -332,7 +382,10 @@ export const MedicationReminderForm = ({
         </div>
 
       {/* Recipient Details */}
-      <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
+      <div className={cn(
+        "bg-secondary/50 rounded-lg p-4 space-y-4 transition-all duration-300",
+        voiceHighlights.has('phone') && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
+      )}>
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Who is this for?
         </p>
@@ -378,7 +431,10 @@ export const MedicationReminderForm = ({
       </div>
 
       {/* Schedule */}
-      <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
+      <div className={cn(
+        "bg-secondary/50 rounded-lg p-4 space-y-4 transition-all duration-300",
+        voiceHighlights.has('schedule') && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
+      )}>
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Schedule
         </p>
@@ -463,7 +519,10 @@ export const MedicationReminderForm = ({
       </div>
 
       {/* Message Preview */}
-      <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
+      <div className={cn(
+        "bg-secondary/50 rounded-lg p-4 space-y-4 transition-all duration-300",
+        voiceHighlights.has('message') && "ring-2 ring-primary/40 ring-offset-2 ring-offset-background"
+      )}>
         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
           Call Script
         </p>
