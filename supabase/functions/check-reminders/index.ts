@@ -262,7 +262,7 @@ serve(async (req) => {
               })
               .eq("id", reminder.id);
             
-            console.log(`Rescheduled reminder ${reminder.id} to ${nextScheduledAt.toISOString()}`);
+            console.log(`Rescheduled reminder to next occurrence`);
           } else {
             // Deactivate the reminder if it shouldn't continue
             await supabase
@@ -270,7 +270,7 @@ serve(async (req) => {
               .update({ is_active: false })
               .eq("id", reminder.id);
             
-            console.log(`Deactivated reminder ${reminder.id} - recurrence ended`);
+            console.log("Deactivated reminder - recurrence ended");
           }
         } else {
           // One-time reminder - deactivate after execution
@@ -281,7 +281,7 @@ serve(async (req) => {
         }
 
       } catch (callError: unknown) {
-        console.error(`Error processing reminder ${reminder.id}:`, callError);
+        console.error("Error processing a reminder:", callError instanceof Error ? callError.message : "unknown");
         results.push({ reminderId: reminder.id, success: false });
       }
     }

@@ -93,7 +93,7 @@ serve(async (req) => {
     const elevenLabsVoiceId = voiceRecord.elevenlabs_voice_id;
 
     // Generate TTS preview
-    console.log(`Generating preview for voice ${elevenLabsVoiceId}...`);
+    console.log("Generating voice preview...");
 
     const ttsResponse = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${elevenLabsVoiceId}?output_format=mp3_22050_32`,
@@ -116,8 +116,7 @@ serve(async (req) => {
     );
 
     if (!ttsResponse.ok) {
-      const errorText = await ttsResponse.text();
-      console.error("TTS generation error:", errorText);
+      console.error("TTS generation error:", ttsResponse.status);
       return new Response(
         JSON.stringify({ error: "Failed to generate preview" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -127,7 +126,7 @@ serve(async (req) => {
     const audioBuffer = await ttsResponse.arrayBuffer();
     const audioBase64 = base64Encode(audioBuffer);
 
-    console.log(`Preview generated. Size: ${audioBuffer.byteLength} bytes`);
+    console.log("Preview generated successfully");
 
     return new Response(
       JSON.stringify({

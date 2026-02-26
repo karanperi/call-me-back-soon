@@ -1,8 +1,10 @@
 /// <reference types="https://esm.sh/@supabase/functions-js/src/edge-runtime.d.ts" />
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
 const DEEPGRAM_API_KEY = Deno.env.get("DEEPGRAM_API_KEY");
 
-Deno.serve((req) => {
+Deno.serve(async (req) => {
   const upgrade = req.headers.get("upgrade") || "";
   if (upgrade.toLowerCase() !== "websocket") {
     return new Response("Expected WebSocket upgrade", { status: 426 });
@@ -13,18 +15,36 @@ Deno.serve((req) => {
     return new Response("Server configuration error", { status: 500 });
   }
 
+  // Authenticate the user via token query parameter
   const url = new URL(req.url);
+  const token = url.searchParams.get("token");
   const language = url.searchParams.get("language") || "en";
+
+  if (!token) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+  const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+
+  const supabaseAuth = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+    global: { headers: { Authorization: `Bearer ${token}` } }
+  });
+
+  const { data: claimsData, error: claimsError } = await supabaseAuth.auth.getClaims(token);
+  if (claimsError || !claimsData?.claims) {
+    return new Response("Unauthorized", { status: 401 });
+  }
+
+  const userId = claimsData.claims.sub as string;
+  console.log("Authenticated WebSocket connection for user");
 
   const { socket: clientSocket, response } = Deno.upgradeWebSocket(req);
 
   let deepgramSocket: WebSocket | null = null;
-  // Buffer audio chunks that arrive before Deepgram is connected
   let audioBuffer: (string | ArrayBuffer | Blob)[] = [];
 
   clientSocket.onopen = () => {
-    console.log("Client WebSocket connected, connecting to Deepgram...");
-
     const deepgramUrl = new URL("wss://api.deepgram.com/v1/listen");
     deepgramUrl.searchParams.set("model", "nova-2");
     deepgramUrl.searchParams.set("language", language);
@@ -38,8 +58,7 @@ Deno.serve((req) => {
     ]);
 
     deepgramSocket.onopen = () => {
-      console.log("Connected to Deepgram API, flushing", audioBuffer.length, "buffered chunks");
-      // Flush any audio that arrived while we were connecting
+      console.log("Deepgram connected, flushing", audioBuffer.length, "buffered chunks");
       for (const chunk of audioBuffer) {
         deepgramSocket!.send(chunk);
       }
@@ -52,12 +71,12 @@ Deno.serve((req) => {
       }
     };
 
-    deepgramSocket.onerror = (event) => {
-      console.error("Deepgram WebSocket error:", event);
+    deepgramSocket.onerror = () => {
+      console.error("Deepgram WebSocket error");
     };
 
     deepgramSocket.onclose = (event) => {
-      console.log("Deepgram WebSocket closed:", event.code, event.reason);
+      console.log("Deepgram WebSocket closed:", event.code);
       if (clientSocket.readyState === WebSocket.OPEN) {
         clientSocket.close(1000, "Deepgram connection closed");
       }
@@ -68,18 +87,15 @@ Deno.serve((req) => {
     if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
       deepgramSocket.send(event.data);
     } else {
-      // Deepgram not ready yet — buffer the chunk
-      console.log("Buffering audio chunk, Deepgram state:", deepgramSocket?.readyState);
       audioBuffer.push(event.data);
     }
   };
 
-  clientSocket.onerror = (event) => {
-    console.error("Client WebSocket error:", event);
+  clientSocket.onerror = () => {
+    console.error("Client WebSocket error");
   };
 
-  clientSocket.onclose = (event) => {
-    console.log("Client WebSocket closed:", event.code, event.reason);
+  clientSocket.onclose = () => {
     if (deepgramSocket && deepgramSocket.readyState === WebSocket.OPEN) {
       deepgramSocket.close(1000, "Client disconnected");
     }
