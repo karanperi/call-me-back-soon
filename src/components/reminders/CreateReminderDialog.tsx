@@ -104,7 +104,6 @@ export const CreateReminderDialog = ({
     getDefaultConfig("once", defaultDateTime.date)
   );
   const [voice, setVoice] = useState<Voice>("friendly_female");
-  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [timezone, setTimezone] = useState(defaultTz);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
@@ -164,7 +163,6 @@ export const CreateReminderDialog = ({
     setTime(newDefaults.time);
     setFrequencyConfig(getDefaultConfig("once", newDefaults.date));
     setVoice("friendly_female");
-    setCustomVoiceId(null);
     setTimezone(newTz);
   }, [getDefaultDateTime]);
 
@@ -304,7 +302,6 @@ export const CreateReminderDialog = ({
         repeat_until: dbFields.repeat_until,
         max_occurrences: dbFields.max_occurrences,
         voice,
-        custom_voice_id: voice === "custom" ? customVoiceId : null,
       });
 
       toast({ title: "Reminder created successfully!" });
@@ -352,13 +349,11 @@ export const CreateReminderDialog = ({
     setTime(newDefaults.time);
     setFrequencyConfig(getDefaultConfig("once", newDefaults.date));
     setVoice("friendly_female");
-    setCustomVoiceId(null);
     setTimezone(newTz);
   };
 
-  const handleVoiceSelect = (selectedVoice: VoiceType, selectedCustomVoiceId?: string) => {
+  const handleVoiceSelect = (selectedVoice: VoiceType) => {
     setVoice(selectedVoice);
-    setCustomVoiceId(selectedCustomVoiceId || null);
   };
 
   // Get start of today for calendar minimum date
@@ -578,7 +573,6 @@ export const CreateReminderDialog = ({
             <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
               <VoiceSelector
                 selectedVoice={voice}
-                customVoiceId={customVoiceId}
                 onSelect={handleVoiceSelect}
               />
             </div>
