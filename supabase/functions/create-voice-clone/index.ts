@@ -136,7 +136,7 @@ serve(async (req) => {
       formData.append("description", "Yaad familiar voice");
       formData.append("files", audioBlob, "voice_recording.webm");
 
-      console.log(`Calling ElevenLabs API to clone voice for user ${userId}...`);
+      console.log("Calling ElevenLabs API to clone voice...");
 
       const elevenLabsResponse = await fetch("https://api.elevenlabs.io/v1/voices/add", {
         method: "POST",
@@ -148,7 +148,7 @@ serve(async (req) => {
 
       if (!elevenLabsResponse.ok) {
         const errorText = await elevenLabsResponse.text();
-        console.error("ElevenLabs API error:", errorText);
+        console.error("ElevenLabs API error:", elevenLabsResponse.status);
 
         // Update record as failed
         await supabase
@@ -168,7 +168,7 @@ serve(async (req) => {
       const elevenLabsResult = await elevenLabsResponse.json();
       const elevenLabsVoiceId = elevenLabsResult.voice_id;
 
-      console.log(`Voice cloned successfully. ElevenLabs voice ID: ${elevenLabsVoiceId}`);
+      console.log("Voice cloned successfully");
 
       // Update record with voice_id and status 'ready'
       const { error: updateError } = await supabase

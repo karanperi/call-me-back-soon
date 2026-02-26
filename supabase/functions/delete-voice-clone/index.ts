@@ -84,7 +84,7 @@ serve(async (req) => {
 
     // Delete from ElevenLabs (if we have a valid voice ID)
     if (elevenLabsVoiceId && elevenLabsVoiceId !== "pending") {
-      console.log(`Deleting voice ${elevenLabsVoiceId} from ElevenLabs...`);
+      console.log("Deleting voice from ElevenLabs...");
 
       try {
         const deleteResponse = await fetch(
@@ -98,9 +98,7 @@ serve(async (req) => {
         );
 
         if (!deleteResponse.ok) {
-          const errorText = await deleteResponse.text();
-          console.error("ElevenLabs delete error:", errorText);
-          // Continue anyway - we still want to delete from our database
+          console.error("ElevenLabs delete error:", deleteResponse.status);
         } else {
           console.log("Voice deleted from ElevenLabs");
         }
@@ -139,7 +137,7 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Voice ${voiceId} deleted successfully`);
+    console.log("Voice deleted successfully");
 
     return new Response(
       JSON.stringify({

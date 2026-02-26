@@ -82,14 +82,13 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const publicUrl = `${supabaseUrl}/functions/v1/twilio-status-callback`;
     
-    console.log(`Validating signature for URL: ${publicUrl}`);
+    console.log("Validating Twilio signature");
 
     // Validate the signature using the public URL
     const isValid = await validateTwilioSignature(authToken, twilioSignature, publicUrl, params);
     if (!isValid) {
       console.error("Invalid Twilio signature - rejecting request");
-      console.error(`req.url was: ${req.url}`);
-      console.error(`Public URL used: ${publicUrl}`);
+      console.error("Invalid Twilio signature - rejecting request");
       return new Response("Unauthorized", { status: 401 });
     }
 
@@ -99,7 +98,7 @@ serve(async (req) => {
     const answeredBy = params["AnsweredBy"] || null;
     const callDuration = params["CallDuration"] || null;
 
-    console.log(`Callback received: SID=${callSid}, Status=${callStatus}, AnsweredBy=${answeredBy}, Duration=${callDuration}`);
+    console.log(`Callback received: Status=${callStatus}, Duration=${callDuration}`);
 
     if (!callSid || !callStatus) {
       console.error("Missing required fields: CallSid or CallStatus");
@@ -158,9 +157,9 @@ serve(async (req) => {
     }
 
     if (!data || data.length === 0) {
-      console.warn(`No call history found for SID: ${callSid}`);
+      console.warn("No matching call history found for callback");
     } else {
-      console.log(`Updated call history ${data[0].id} to status: ${ourStatus}`);
+      console.log(`Updated call history to status: ${ourStatus}`);
     }
 
     // Twilio expects 200 OK

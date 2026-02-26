@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -150,7 +151,6 @@ function buildSystemPrompt(timezone: string, contacts: Array<{ name: string; pho
   const today = new Date();
   const todayStr = today.toISOString().split('T')[0];
   
-  // Calculate day of week for relative date handling
   const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const currentDayName = dayNames[today.getDay()];
   
@@ -247,6 +247,31 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate the user
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const token = authHeader.replace("Bearer ", "");
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY");
+
+    const supabaseAuth = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
+      global: { headers: { Authorization: authHeader } }
+    });
+
+    const { data: claimsData, error: claimsError } = await supabaseAuth.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     if (!ANTHROPIC_API_KEY) {
       throw new Error("ANTHROPIC_API_KEY is not configured");
@@ -264,9 +289,7 @@ serve(async (req) => {
       );
     }
 
-    console.log("Parsing transcript:", transcript);
-    console.log("Timezone:", timezone);
-    console.log("Contacts:", existingContacts?.length || 0);
+    console.log("Parsing voice transcript, length:", transcript.length, "chars");
 
     const systemPrompt = buildSystemPrompt(timezone, existingContacts);
 
@@ -293,13 +316,11 @@ serve(async (req) => {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Anthropic API error:", response.status, errorText);
+      console.error("Anthropic API error:", response.status);
       throw new Error(`Anthropic API error: ${response.status}`);
     }
 
     const result = await response.json();
-    console.log("Claude response:", JSON.stringify(result, null, 2));
 
     // Extract the tool use result
     const toolUse = result.content?.find((block: { type: string }) => block.type === "tool_use");
@@ -319,6 +340,8 @@ serve(async (req) => {
       rejection_reason: toolUse.input.rejection_reason,
       additional_time_slots_count: toolUse.input.additional_time_slots_count || 0
     };
+
+    console.log("Parse result: type=", parsed.reminder_type, "confidence=", parsed.confidence_score);
 
     // Look up phone number from contacts if we have a recipient name but no phone
     if (parsed.recipient_name && !parsed.phone_number && existingContacts) {
@@ -340,7 +363,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error("parse-voice-reminder error:", error);
+    console.error("parse-voice-reminder error:", error instanceof Error ? error.message : "Unknown error");
     return new Response(
       JSON.stringify({
         success: false,

@@ -23,11 +23,16 @@ interface UseVoiceRecorderReturn {
   error: Error | null;
 }
 
+import { supabase } from '@/integrations/supabase/client';
+
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 
-function getProxyWsUrl(language: string) {
+async function getProxyWsUrl(language: string) {
   const base = (SUPABASE_URL || window.location.origin).replace(/^http/, "ws");
-  return `${base}/functions/v1/deepgram-proxy?language=${encodeURIComponent(language)}`;
+  // Get the current session token for authentication
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token || '';
+  return `${base}/functions/v1/deepgram-proxy?language=${encodeURIComponent(language)}&token=${encodeURIComponent(token)}`;
 }
 
 export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoiceRecorderReturn {
@@ -162,7 +167,7 @@ export function useVoiceRecorder(options: UseVoiceRecorderOptions = {}): UseVoic
       });
       streamRef.current = stream;
 
-      const wsUrl = getProxyWsUrl(language);
+      const wsUrl = await getProxyWsUrl(language);
       const ws = new WebSocket(wsUrl);
       websocketRef.current = ws;
 

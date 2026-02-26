@@ -67,7 +67,7 @@ serve(async (req) => {
     let authenticatedUserId: string | null = null;
     
     if (isServiceRoleCall) {
-      console.log("Service role call detected - skipping user authentication");
+      console.log("Service role call detected");
     } else {
       const supabaseAuth = createClient(SUPABASE_URL!, SUPABASE_ANON_KEY!, {
         global: { headers: { Authorization: authHeader } }
@@ -223,11 +223,11 @@ serve(async (req) => {
         voiceId = voiceMap.friendly_female;
       } else {
         voiceId = voiceData.elevenlabs_voice_id;
-        console.log(`Using custom voice: ${voiceId}`);
+        console.log("Using custom voice");
       }
     }
 
-    console.log(`Generating speech for reminder ${reminderId}...`);
+    console.log("Generating speech...");
 
     const elevenLabsResponse = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=mp3_22050_32`,
@@ -251,7 +251,7 @@ serve(async (req) => {
 
     if (!elevenLabsResponse.ok) {
       const errorText = await elevenLabsResponse.text();
-      console.error("Speech generation error:", errorText);
+      console.error("Speech generation error:", elevenLabsResponse.status);
       await updateHistoryStatus("failed", `Speech generation failed: ${elevenLabsResponse.status}`);
       return new Response(
         JSON.stringify({ error: "Failed to generate audio for your call" }),
@@ -260,7 +260,7 @@ serve(async (req) => {
     }
 
     const audioBuffer = await elevenLabsResponse.arrayBuffer();
-    console.log(`Speech generated. Audio size: ${audioBuffer.byteLength} bytes`);
+    console.log("Speech generated successfully");
 
     // ============================================================
     // STEP 3: Upload audio to Supabase Storage
@@ -297,7 +297,7 @@ serve(async (req) => {
     }
 
     const audioUrl = signedUrlData.signedUrl;
-    console.log(`Audio uploaded with signed URL`);
+    console.log("Audio uploaded successfully");
 
     // ============================================================
     // STEP 4: Make the call with Twilio
@@ -341,7 +341,7 @@ serve(async (req) => {
     const twilioResult = await twilioResponse.json();
 
     if (!twilioResponse.ok) {
-      console.error("Call delivery error:", twilioResult);
+      console.error("Call delivery error:", twilioResponse.status);
       const errorMsg = twilioResult.message || twilioResult.error_message || `Twilio error: ${twilioResponse.status}`;
       await updateHistoryStatus("failed", errorMsg);
       return new Response(
@@ -354,7 +354,7 @@ serve(async (req) => {
     // STEP 5: Store Twilio Call SID - status remains "in_progress"
     // The actual outcome will be updated by the twilio-status-callback webhook
     // ============================================================
-    console.log(`Call initiated. Call SID: ${twilioResult.sid}. Awaiting callback for final status.`);
+    console.log("Call initiated successfully. Awaiting callback for final status.");
     
     // Update history with the Twilio Call SID so the callback can find it
     // Status stays "in_progress" until the callback updates it
@@ -371,7 +371,7 @@ serve(async (req) => {
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-    console.error("Error in make-call function:", error);
+    console.error("Error in make-call function:", errorMessage);
     
     // Update history to failed if we have a record
     if (callHistoryId && supabase) {
