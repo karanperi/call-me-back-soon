@@ -96,7 +96,6 @@ export const MedicationReminderForm = ({
   const [repeat, setRepeat] = useState<RepeatKey>("daily");
   const [date, setDate] = useState<Date | undefined>(defaultDateTime.date);
   const [voice, setVoice] = useState<Voice>("friendly_female");
-  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   
   // Message state
@@ -117,7 +116,6 @@ export const MedicationReminderForm = ({
     setRepeat("daily");
     setDate(getDefaultDateTime().date);
     setVoice("friendly_female");
-    setCustomVoiceId(null);
     setMessage("");
     setIsManuallyEdited(false);
     setVoiceHighlights(new Set());
@@ -254,9 +252,8 @@ export const MedicationReminderForm = ({
     setIsPhoneValid(isValid);
   };
 
-  const handleVoiceSelect = (selectedVoice: VoiceType, selectedCustomVoiceId?: string) => {
+  const handleVoiceSelect = (selectedVoice: VoiceType) => {
     setVoice(selectedVoice);
-    setCustomVoiceId(selectedCustomVoiceId || null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -306,7 +303,6 @@ export const MedicationReminderForm = ({
       scheduled_at: scheduledAt.toISOString(),
       frequency,
       voice,
-      custom_voice_id: voice === "custom" ? customVoiceId : null,
     };
 
     // Validate time is in the future
@@ -540,7 +536,6 @@ export const MedicationReminderForm = ({
       <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
         <VoiceSelector
           selectedVoice={voice}
-          customVoiceId={customVoiceId}
           onSelect={handleVoiceSelect}
         />
       </div>

@@ -1,15 +1,12 @@
 import { useState } from "react";
-import { Search, Mic2, Mic, Plus } from "lucide-react";
+import { Search, Mic2 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useProfile, useUpdateProfile } from "@/hooks/useProfile";
-import { useUserVoice } from "@/hooks/useUserVoice";
-import { UserVoiceCard } from "@/components/voices/UserVoiceCard";
-import { VoiceRecordingDialog } from "@/components/voices/VoiceRecordingDialog";
 
-type Voice = "friendly_female" | "friendly_male" | "custom";
+type Voice = "friendly_female" | "friendly_male";
 
 interface VoiceOption {
   id: Voice;
@@ -35,10 +32,8 @@ const AI_VOICES: VoiceOption[] = [
 
 const Voices = () => {
   const { data: profile, isLoading: isProfileLoading } = useProfile();
-  const { data: userVoice, isLoading: isVoiceLoading, refetch: refetchVoice } = useUserVoice();
   const updateProfile = useUpdateProfile();
   const [filter] = useState("all");
-  const [showRecordingDialog, setShowRecordingDialog] = useState(false);
 
   const activeVoice = (profile?.default_voice as Voice) || "friendly_female";
 
@@ -54,9 +49,7 @@ const Voices = () => {
       await updateProfile.mutateAsync({ default_voice: voiceId });
       toast({
         title: "Default voice updated",
-        description: voiceId === "custom" 
-          ? `${userVoice?.name} is now your default`
-          : `${AI_VOICES.find((v) => v.id === voiceId)?.name} is now your default`,
+        description: `${AI_VOICES.find((v) => v.id === voiceId)?.name} is now your default`,
       });
     } catch (error) {
       toast({
@@ -66,15 +59,7 @@ const Voices = () => {
     }
   };
 
-  const handleRecordingSuccess = () => {
-    refetchVoice();
-    // Automatically select the custom voice as default
-    handleSelectVoice("custom");
-  };
-
-  const isLoading = isProfileLoading || isVoiceLoading;
-
-  if (isLoading) {
+  if (isProfileLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" />
@@ -114,31 +99,6 @@ const Voices = () => {
               {f}
             </button>
           ))}
-        </div>
-
-        {/* MY VOICES section - Coming Soon */}
-        <div className="flex items-center gap-2 mb-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            My Voices
-          </p>
-          <span className="text-[10px] font-semibold uppercase tracking-wider bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-            Coming Soon
-          </span>
-        </div>
-
-        <div
-          className="w-full mb-6 p-6 rounded-lg border-2 border-dashed border-muted-foreground/20 text-center opacity-60 cursor-not-allowed"
-        >
-          <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-secondary/50 flex items-center justify-center">
-            <div className="relative">
-              <Mic className="w-7 h-7 text-muted-foreground/50" />
-              <Plus className="w-4 h-4 absolute -bottom-1 -right-1 text-muted-foreground/50" />
-            </div>
-          </div>
-          <p className="font-medium text-muted-foreground mb-1">Add Your Voice</p>
-          <p className="text-sm text-muted-foreground/70">
-            Clone your voice to make reminders more personal
-          </p>
         </div>
 
         {/* AI VOICES section */}
@@ -198,12 +158,6 @@ const Voices = () => {
           ))}
         </div>
       </div>
-
-      <VoiceRecordingDialog
-        open={showRecordingDialog}
-        onOpenChange={setShowRecordingDialog}
-        onSuccess={handleRecordingSuccess}
-      />
     </div>
   );
 };

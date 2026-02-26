@@ -69,7 +69,6 @@ export const EditReminderDialog = ({
     getDefaultConfig("once", new Date())
   );
   const [voice, setVoice] = useState<Voice>("friendly_female");
-  const [customVoiceId, setCustomVoiceId] = useState<string | null>(null);
   const [timezone, setTimezone] = useState(getDefaultTimezone());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showTestCallConfirm, setShowTestCallConfirm] = useState(false);
@@ -103,9 +102,8 @@ export const EditReminderDialog = ({
     setIsPhoneValid(isValid);
   };
 
-  const handleVoiceSelect = (selectedVoice: VoiceType, selectedCustomVoiceId?: string) => {
+  const handleVoiceSelect = (selectedVoice: VoiceType) => {
     setVoice(selectedVoice);
-    setCustomVoiceId(selectedCustomVoiceId || null);
   };
 
   // Initialize form with reminder data
@@ -137,7 +135,6 @@ export const EditReminderDialog = ({
       });
       setFrequencyConfig(config);
       setVoice(reminder.voice as Voice);
-      setCustomVoiceId((reminder as any).custom_voice_id || null);
     }
   }, [reminder]);
 
@@ -199,7 +196,6 @@ export const EditReminderDialog = ({
         repeat_until: dbFields.repeat_until,
         max_occurrences: dbFields.max_occurrences,
         voice,
-        custom_voice_id: voice === "custom" ? customVoiceId : null,
         is_active: shouldActivate ? true : reminder.is_active,
       });
 
@@ -408,7 +404,6 @@ export const EditReminderDialog = ({
             <div className="bg-secondary/50 rounded-lg p-4 space-y-4">
               <VoiceSelector
                 selectedVoice={voice}
-                customVoiceId={customVoiceId}
                 onSelect={handleVoiceSelect}
               />
             </div>
