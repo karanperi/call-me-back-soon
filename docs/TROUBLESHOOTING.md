@@ -13,14 +13,14 @@ Common issues and their solutions when developing or using Yaad.
 2. Verify variables are prefixed with `VITE_`:
    ```env
    VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-key
+   VITE_SUPABASE_PUBLISHABLE_KEY=your-key
    ```
 3. Restart dev server after changing `.env`
 4. Check for typos in variable names
 
 ---
 
-### "Cannot find module '@/...'" 
+### "Cannot find module '@/...'"
 
 **Symptom**: TypeScript/build errors about missing modules.
 
@@ -100,10 +100,13 @@ npm run dev -- --port 3000
    supabase functions logs make-call
    ```
 3. Verify all required secrets exist:
-   - ELEVENLABS_API_KEY
-   - TWILIO_ACCOUNT_SID
-   - TWILIO_AUTH_TOKEN
-   - TWILIO_PHONE_NUMBER
+   - `ELEVENLABS_API_KEY`
+   - `TWILIO_ACCOUNT_SID`
+   - `TWILIO_AUTH_TOKEN`
+   - `TWILIO_PHONE_NUMBER`
+   - `DEEPGRAM_API_KEY`
+   - `ANTHROPIC_API_KEY`
+   - `CRON_SECRET`
 
 ---
 
@@ -184,29 +187,46 @@ npm run dev -- --port 3000
 
 ---
 
-## Voice Cloning Issues
+## Voice Input Issues
 
-### "Voice cloning failed"
+### "Microphone not working"
 
-**Symptom**: Cannot create custom voice.
-
-**Solutions**:
-1. Ensure recording is at least 10 seconds
-2. Check audio format (WebM supported)
-3. Verify ElevenLabs account has instant voice clone access
-4. Check API character limits
-
----
-
-### "Custom voice sounds wrong"
-
-**Symptom**: Cloned voice doesn't match original.
+**Symptom**: Voice input button doesn't activate or no transcript appears.
 
 **Solutions**:
-1. Record in quiet environment
-2. Speak clearly and naturally
-3. Record longer sample (30+ seconds)
-4. Delete and recreate voice
+1. Ensure the app is served over HTTPS (required for `getUserMedia`)
+2. Check browser microphone permissions (click lock icon in address bar)
+3. Try a different browser (Chrome/Edge recommended)
+4. iOS: Use Safari (Chrome on iOS has mic limitations)
+
+### "Voice input connects but no transcription"
+
+**Symptom**: Microphone activates but no text appears.
+
+**Solutions**:
+1. Verify `DEEPGRAM_API_KEY` is set in edge function secrets
+2. Check `deepgram-proxy` function is deployed:
+   ```bash
+   supabase functions deploy deepgram-proxy
+   ```
+3. Check function logs for errors:
+   ```bash
+   supabase functions logs deepgram-proxy
+   ```
+4. Ensure your Deepgram account has available credits
+
+### "Voice-to-form parsing fails"
+
+**Symptom**: Transcript is generated but form fields aren't populated.
+
+**Solutions**:
+1. Verify `ANTHROPIC_API_KEY` is set in edge function secrets
+2. Check `parse-voice-reminder` function is deployed
+3. Try speaking more clearly with specific details (name, time, message)
+4. Check function logs:
+   ```bash
+   supabase functions logs parse-voice-reminder
+   ```
 
 ---
 
@@ -315,3 +335,4 @@ If your issue isn't listed:
    - [Supabase Status](https://status.supabase.com)
    - [Twilio Status](https://status.twilio.com)
    - [ElevenLabs Status](https://status.elevenlabs.io)
+   - [Deepgram Status](https://status.deepgram.com)

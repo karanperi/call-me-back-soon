@@ -18,7 +18,9 @@ This guide walks you through setting up Yaad for local development.
 |---------|---------|----------|
 | Supabase | Database, Auth, Functions | [supabase.com](https://supabase.com) |
 | Twilio | Voice calls | [twilio.com](https://www.twilio.com) |
-| ElevenLabs | Voice AI | [elevenlabs.io](https://elevenlabs.io) |
+| ElevenLabs | Voice synthesis (TTS) | [elevenlabs.io](https://elevenlabs.io) |
+| Deepgram | Speech-to-text (voice input) | [deepgram.com](https://deepgram.com) |
+| Anthropic | AI parsing (voice-to-form) | [console.anthropic.com](https://console.anthropic.com) |
 
 ## Step 1: Clone the Repository
 
@@ -81,9 +83,7 @@ supabase functions deploy
 # Or deploy individually
 supabase functions deploy make-call
 supabase functions deploy check-reminders
-supabase functions deploy create-voice-clone
-supabase functions deploy delete-voice-clone
-supabase functions deploy preview-voice
+supabase functions deploy deepgram-proxy
 supabase functions deploy parse-voice-reminder
 supabase functions deploy twilio-status-callback
 ```
@@ -91,10 +91,13 @@ supabase functions deploy twilio-status-callback
 ### Set Edge Function Secrets
 
 ```bash
-supabase secrets set ELEVENLABS_API_KEY=your_key
-supabase secrets set TWILIO_ACCOUNT_SID=your_sid
-supabase secrets set TWILIO_AUTH_TOKEN=your_token
-supabase secrets set TWILIO_PHONE_NUMBER=your_number
+supabase secrets set ELEVENLABS_API_KEY=your_elevenlabs_key
+supabase secrets set TWILIO_ACCOUNT_SID=your_twilio_sid
+supabase secrets set TWILIO_AUTH_TOKEN=your_twilio_token
+supabase secrets set TWILIO_PHONE_NUMBER=+1234567890
+supabase secrets set DEEPGRAM_API_KEY=your_deepgram_key
+supabase secrets set ANTHROPIC_API_KEY=your_anthropic_key
+supabase secrets set CRON_SECRET=your_random_secret_string
 ```
 
 ## Step 4: Configure Twilio
@@ -132,7 +135,28 @@ The app uses these preset voices:
 
 You can customize these in `supabase/functions/make-call/index.ts`.
 
-## Step 6: Environment Variables
+## Step 6: Configure Deepgram
+
+### Get API Key
+
+1. Sign up at [deepgram.com](https://deepgram.com)
+2. Go to your Dashboard > API Keys
+3. Create a new API key with **Usage** permissions
+4. Copy the key — it is shown only once
+
+Deepgram powers the voice input feature, enabling users to speak reminders that are transcribed in real-time via WebSocket.
+
+## Step 7: Configure Anthropic
+
+### Get API Key
+
+1. Sign up at [console.anthropic.com](https://console.anthropic.com)
+2. Go to API Keys
+3. Create a new key and copy it
+
+Anthropic Claude is used by the `parse-voice-reminder` edge function to convert natural language transcripts into structured reminder fields (recipient, message, time, frequency).
+
+## Step 8: Environment Variables
 
 ### Create .env File
 
@@ -147,16 +171,12 @@ Edit `.env` with your values:
 ```env
 # Supabase (from Project Settings > API)
 VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
 
-# These are set via Supabase secrets, not in .env
-# ELEVENLABS_API_KEY=your-elevenlabs-key
-# TWILIO_ACCOUNT_SID=your-twilio-sid
-# TWILIO_AUTH_TOKEN=your-twilio-token
-# TWILIO_PHONE_NUMBER=+1234567890
+# Edge function secrets are set via `supabase secrets set`, NOT in .env
 ```
 
-## Step 7: Start Development Server
+## Step 9: Start Development Server
 
 ```bash
 npm run dev
@@ -164,14 +184,14 @@ npm run dev
 
 The app will be available at `http://localhost:5173`
 
-## Step 8: Set Up Cron Job (Optional)
+## Step 10: Set Up Cron Job (Optional)
 
 The `check-reminders` function needs to run periodically. Options:
 
 ### Option A: Supabase Cron (Recommended)
 
 1. Go to Database > Extensions
-2. Enable `pg_cron`
+2. Enable `pg_cron` and `pg_net`
 3. Run in SQL Editor:
 
 ```sql
@@ -182,12 +202,16 @@ SELECT cron.schedule(
   SELECT net.http_post(
     url := 'https://YOUR_PROJECT_REF.supabase.co/functions/v1/check-reminders',
     headers := jsonb_build_object(
-      'Authorization', 'Bearer YOUR_SERVICE_ROLE_KEY'
-    )
+      'Content-Type', 'application/json',
+      'X-Cron-Secret', 'YOUR_CRON_SECRET'
+    ),
+    body := '{}'::jsonb
   );
   $$
 );
 ```
+
+> **Note**: The `X-Cron-Secret` header value must match the `CRON_SECRET` you set in edge function secrets.
 
 ### Option B: External Cron Service
 
@@ -202,6 +226,7 @@ Use services like:
 - [ ] Can create account and sign in
 - [ ] Can navigate to all pages
 - [ ] Can create a reminder (test with your own phone)
+- [ ] Voice input works (microphone icon on home page)
 - [ ] Receive test call successfully
 - [ ] Call history shows the call
 
@@ -220,17 +245,20 @@ Check that all secrets are set:
 supabase secrets list
 ```
 
+Required secrets: `ELEVENLABS_API_KEY`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `DEEPGRAM_API_KEY`, `ANTHROPIC_API_KEY`, `CRON_SECRET`
+
 ### "Twilio call fails"
 
 - Verify phone number format (E.164: +1234567890)
 - Check Twilio account has sufficient balance
 - Ensure number has Voice capability
 
-### "ElevenLabs voice generation fails"
+### "Voice input not working"
 
-- Verify API key is valid
-- Check ElevenLabs account has available characters
-- Ensure message is not empty
+- Ensure the app is served over HTTPS (required for microphone access)
+- Check browser microphone permissions
+- Verify `DEEPGRAM_API_KEY` is set in edge function secrets
+- Check `deepgram-proxy` function is deployed
 
 ## Next Steps
 

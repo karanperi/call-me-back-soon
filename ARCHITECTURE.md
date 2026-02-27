@@ -25,7 +25,7 @@ This document provides a technical overview of Yaad's architecture, including sy
 │  └─────────────────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              │ HTTPS
+                              │ HTTPS / WSS
                               ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                         Supabase                                 │
@@ -34,26 +34,24 @@ This document provides a technical overview of Yaad's architecture, including sy
 │  │             │  │ (PostgreSQL)│  │  ┌──────────────────┐  │  │
 │  │ • Sign up   │  │             │  │  │   make-call      │  │  │
 │  │ • Sign in   │  │ • profiles  │  │  │   check-reminders│  │  │
-│  │ • Sessions  │  │ • reminders │  │  │   voice-clone    │  │  │
-│  └─────────────┘  │ • history   │  │  │   preview-voice  │  │  │
-│                   │ • voices    │  │  └──────────────────┘  │  │
-│  ┌─────────────┐  └─────────────┘  └─────────────────────────┘  │
-│  │   Storage   │                                                 │
-│  │             │                                                 │
+│  │ • Sessions  │  │ • reminders │  │  │   deepgram-proxy │  │  │
+│  └─────────────┘  │ • history   │  │  │   parse-voice    │  │  │
+│                   │ • contacts  │  │  │   twilio-callback │  │  │
+│  ┌─────────────┐  └─────────────┘  │  └──────────────────┘  │  │
+│  │   Storage   │                   └─────────────────────────┘  │
 │  │ • Audio     │                                                 │
-│  │ • Voices    │                                                 │
 │  └─────────────┘                                                 │
 └─────────────────────────────────────────────────────────────────┘
                               │
-              ┌───────────────┼───────────────┐
-              │               │               │
-              ▼               ▼               ▼
-       ┌───────────┐   ┌───────────┐   ┌───────────┐
-       │  Twilio   │   │ElevenLabs │   │  Cron Job │
-       │           │   │           │   │           │
-       │ • Calls   │   │ • TTS     │   │ • Check   │
-       │ • Status  │   │ • Clone   │   │   due     │
-       └───────────┘   └───────────┘   └───────────┘
+              ┌───────────────┼───────────────┬───────────────┐
+              │               │               │               │
+              ▼               ▼               ▼               ▼
+       ┌───────────┐   ┌───────────┐   ┌───────────┐   ┌───────────┐
+       │  Twilio   │   │ElevenLabs │   │ Deepgram  │   │ Anthropic │
+       │           │   │           │   │           │   │           │
+       │ • Calls   │   │ • TTS     │   │ • STT     │   │ • NLP     │
+       │ • Status  │   │           │   │ • WebSocket│   │ • Parsing │
+       └───────────┘   └───────────┘   └───────────┘   └───────────┘
 ```
 
 ## Frontend Architecture
@@ -82,7 +80,7 @@ src/pages/
 ├── Home.tsx         # Main dashboard (create reminders)
 ├── History.tsx      # Call history view
 ├── Contacts.tsx     # Contact management
-├── Voices.tsx       # Voice selection & cloning
+├── Voices.tsx       # Voice selection
 ├── Profile.tsx      # User settings
 └── NotFound.tsx     # 404 page
 ```
@@ -91,29 +89,56 @@ src/pages/
 
 ```
 src/components/
-├── auth/            # Authentication flows
-│   ├── AuthGuard.tsx
-│   └── LoginForm.tsx
-├── contacts/        # Contact CRUD
+├── auth/                  # Authentication
+│   └── ProtectedRoute.tsx
+├── contacts/              # Contact management
 │   ├── ContactCard.tsx
-│   └── ContactForm.tsx
-├── history/         # Call logs
-│   ├── HistoryList.tsx
-│   └── HistoryItem.tsx
-├── layout/          # App shell
-│   ├── Header.tsx
-│   ├── Navigation.tsx
-│   └── MobileNav.tsx
-├── phone/           # Phone input
-│   └── PhoneInput.tsx
-├── reminders/       # Core feature
-│   ├── ReminderForm.tsx
-│   ├── ReminderCard.tsx
-│   └── VoiceSelector.tsx
-├── ui/              # shadcn components
-└── voices/          # Voice features
-    ├── VoiceRecorder.tsx
-    └── VoicePreview.tsx
+│   ├── ContactForm.tsx
+│   ├── ContactPickerIcon.tsx
+│   ├── ContactPickerModal.tsx
+│   └── EmptyContactsState.tsx
+├── history/               # Call history
+│   └── CallHistoryDetailDialog.tsx
+├── layout/                # App shell
+│   ├── AppLayout.tsx
+│   ├── BottomNav.tsx
+│   └── PageHeader.tsx
+├── phone/                 # Phone input
+│   ├── CallCostEstimate.tsx
+│   ├── CountryPicker.tsx
+│   └── InternationalPhoneInput.tsx
+├── reminders/             # Core feature
+│   ├── CreateReminderDialog.tsx
+│   ├── CustomFrequencyDialog.tsx
+│   ├── EditReminderDialog.tsx
+│   ├── FrequencyPicker.tsx
+│   ├── MedicationChip.tsx
+│   ├── MedicationExpandedForm.tsx
+│   ├── MedicationList.tsx
+│   ├── MedicationReminderForm.tsx
+│   ├── MessagePreview.tsx
+│   ├── TemplatePicker.tsx
+│   ├── TestCallConfirmation.tsx
+│   └── VoiceInputSection.tsx
+├── ui/                    # shadcn components
+└── voices/                # Voice selection
+    └── VoiceSelector.tsx
+```
+
+### Custom Hooks
+
+```
+src/hooks/
+├── useAuth.tsx              # Authentication state & methods
+├── useCallHistory.ts        # Call history CRUD
+├── useContacts.ts           # Contact CRUD
+├── useMakeCall.ts           # Initiate calls
+├── useProfile.ts            # User profile management
+├── useReminders.ts          # Reminder CRUD
+├── useVoiceDisableStatus.ts # Voice availability check
+├── useVoiceRecorder.ts      # Microphone recording & Deepgram STT
+├── useVoiceReminderParser.ts # AI-powered voice-to-form parsing
+└── use-mobile.tsx           # Mobile breakpoint detection
 ```
 
 ### State Management
@@ -143,22 +168,20 @@ src/components/
 
 #### Edge Functions (Deno)
 
-| Function | Trigger | Purpose |
-|----------|---------|----------|
-| `make-call` | HTTP POST | Initiate a voice call |
-| `check-reminders` | Cron (1 min) | Process due reminders |
-| `create-voice-clone` | HTTP POST | Clone user voice |
-| `delete-voice-clone` | HTTP DELETE | Remove cloned voice |
-| `preview-voice` | HTTP POST | Generate voice preview |
-| `parse-voice-reminder` | HTTP POST | AI-parse reminder text |
-| `twilio-status-callback` | Webhook | Update call status |
+| Function | Trigger | Purpose | Auth |
+|----------|---------|----------|------|
+| `make-call` | HTTP POST | Initiate a voice call | JWT |
+| `check-reminders` | Cron (1 min) | Process due reminders | X-Cron-Secret |
+| `deepgram-proxy` | WebSocket | Real-time speech-to-text | JWT (via query param) |
+| `parse-voice-reminder` | HTTP POST | AI-parse natural language into reminder fields | JWT |
+| `twilio-status-callback` | Webhook | Update call status from Twilio | Twilio signature |
 
 ### Edge Function Flow
 
 ```
 make-call Function:
 
-1. Validate request & auth
+1. Validate request & JWT auth
          │
          ▼
 2. Create call_history (status: pending)
@@ -180,6 +203,32 @@ make-call Function:
          │
          ▼
 8. Twilio callback updates final status
+```
+
+### Voice-to-Form Data Flow
+
+```
+User speaks into microphone
+         │
+         ▼
+useVoiceRecorder opens WebSocket to deepgram-proxy
+         │
+         ▼
+deepgram-proxy validates JWT, connects to Deepgram STT API
+         │
+         ▼
+Real-time transcript returned to client
+         │
+         ▼
+useVoiceReminderParser sends transcript to parse-voice-reminder
+         │
+         ▼
+parse-voice-reminder uses Anthropic Claude to extract:
+  • recipientName, phoneNumber, message
+  • scheduledAt, frequency
+         │
+         ▼
+Parsed fields auto-fill the reminder form
 ```
 
 ## Database Schema
@@ -204,11 +253,12 @@ reminders
 ├── recipient_name
 ├── phone_number (E.164 format)
 ├── message (max 500 chars)
-├── voice (enum)
-├── custom_voice_id (FK → user_voices)
+├── voice (friendly_female | friendly_male)
 ├── scheduled_at
-├── frequency (once/daily/weekly)
+├── frequency (once/daily/weekly + custom recurrence fields)
+├── recurrence_interval, recurrence_days_of_week, etc.
 ├── is_active
+├── max_occurrences, repeat_until
 └── timestamps
 
 -- Call history
@@ -216,24 +266,18 @@ call_history
 ├── id (UUID, PK)
 ├── reminder_id (FK → reminders)
 ├── user_id (FK → auth.users)
-├── recipient_name
-├── phone_number
-├── message
-├── voice
+├── recipient_name, phone_number, message, voice
 ├── status (pending/in_progress/completed/missed/voicemail/failed)
 ├── twilio_call_sid
-├── duration_seconds
-├── error_message
+├── duration_seconds, error_message, attempts
 └── timestamps
 
--- Cloned voices
-user_voices
+-- Contacts
+contacts
 ├── id (UUID, PK)
 ├── user_id (FK → auth.users)
 ├── name
-├── elevenlabs_voice_id
-├── status (processing/ready/failed)
-├── error_message
+├── phone_number
 └── timestamps
 ```
 
@@ -260,38 +304,58 @@ All tables have RLS enabled with policies ensuring:
 
 ### ElevenLabs
 
-**Purpose**: AI voice synthesis
+**Purpose**: AI voice synthesis (text-to-speech)
 
 **Endpoints Used**:
-- `POST /v1/text-to-speech/{voice_id}` - Generate speech
-- `POST /v1/voices/add` - Clone voice
-- `DELETE /v1/voices/{voice_id}` - Delete voice
+- `POST /v1/text-to-speech/{voice_id}` - Generate speech audio
 
 **Voice Options**:
-- Preset: `friendly_female`, `friendly_male`
-- Custom: User-cloned voices
+- `friendly_female` (voice ID: `caMurMrvWp0v3NFJALhl`)
+- `friendly_male` (voice ID: `VR6AewLTigWG4xSOukaG`)
+
+### Deepgram
+
+**Purpose**: Real-time speech-to-text for voice input
+
+**Protocol**: WebSocket (proxied via `deepgram-proxy` edge function)
+
+**Features**:
+- Streaming transcription
+- Multiple language support
+- Interim results for real-time feedback
+
+### Anthropic Claude
+
+**Purpose**: Natural language parsing for voice-to-form
+
+**Model**: Claude (via `parse-voice-reminder` edge function)
+
+**Features**:
+- Extracts structured reminder fields from natural language
+- Handles relative time expressions ("tomorrow at 9am")
+- Identifies recipient, message, schedule, and frequency
 
 ## Data Flow
 
 ### Creating a Reminder
 
 ```
-User fills form → Validate → Insert to reminders table → Show confirmation
+User fills form (or uses voice input) → Validate → Insert to reminders table → Show confirmation
 ```
 
 ### Processing a Due Reminder
 
 ```
-Cron triggers check-reminders
+Cron triggers check-reminders (via X-Cron-Secret)
          │
          ▼
-Query due reminders (scheduled_at ≤ now)
+Query due reminders (scheduled_at ≤ now, is_active = true)
          │
          ▼
 For each reminder:
 ├── Call make-call function
-├── Update last_called_at
-└── Handle recurring logic
+├── Update scheduled_at for recurring
+└── Deactivate if one-time or past repeat_until
 ```
 
 ### Making a Call
@@ -300,7 +364,7 @@ For each reminder:
 make-call receives request
          │
          ▼
-Validate auth & input
+Validate JWT auth & input
          │
          ▼
 Create call_history (pending)
@@ -325,8 +389,8 @@ Twilio webhook updates final status
 
 ### Authentication
 - JWT-based auth via Supabase
+- All edge functions require authentication (JWT or cron secret)
 - Secure session management
-- Password requirements enforced
 
 ### Authorization
 - Row Level Security on all tables
@@ -338,9 +402,11 @@ Twilio webhook updates final status
 - TLS for all connections
 - Signed URLs for audio files (1-hour expiry)
 - Phone numbers stored in E.164 format
+- Sensitive data sanitized from edge function logs
 
 ### API Security
-- Bearer token authentication
+- JWT token authentication on all user-facing endpoints
+- X-Cron-Secret header for cron-triggered functions
 - Rate limiting via Supabase
 - Input validation on all endpoints
 - CORS configured appropriately

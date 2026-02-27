@@ -136,7 +136,7 @@ interface ReminderPayload {
   recipientName: string;
   phoneNumber: string;
   message: string;
-  voice: 'friendly_female' | 'friendly_male' | 'custom';
+  voice: 'friendly_female' | 'friendly_male';
 }
 
 // Avoid

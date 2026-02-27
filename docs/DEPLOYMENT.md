@@ -27,7 +27,7 @@ If you're using Lovable for development:
 3. **Set Environment Variables**
    ```
    VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-key
+   VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
    ```
 
 4. **Deploy**
@@ -120,7 +120,10 @@ supabase secrets set --project-ref YOUR_PROD_PROJECT_REF \
   ELEVENLABS_API_KEY=your_key \
   TWILIO_ACCOUNT_SID=your_sid \
   TWILIO_AUTH_TOKEN=your_token \
-  TWILIO_PHONE_NUMBER=+1234567890
+  TWILIO_PHONE_NUMBER=+1234567890 \
+  DEEPGRAM_API_KEY=your_deepgram_key \
+  ANTHROPIC_API_KEY=your_anthropic_key \
+  CRON_SECRET=your_random_secret
 ```
 
 ### 5. Create Storage Bucket
@@ -130,7 +133,7 @@ supabase secrets set --project-ref YOUR_PROD_PROJECT_REF \
 
 ### 6. Set Up Cron Job
 
-Enable pg_cron and schedule:
+Enable pg_cron and pg_net, then schedule:
 
 ```sql
 SELECT cron.schedule(
@@ -140,12 +143,16 @@ SELECT cron.schedule(
   SELECT net.http_post(
     url := 'https://YOUR_PROJECT.supabase.co/functions/v1/check-reminders',
     headers := jsonb_build_object(
-      'Authorization', 'Bearer YOUR_SERVICE_ROLE_KEY'
-    )
+      'Content-Type', 'application/json',
+      'X-Cron-Secret', 'YOUR_CRON_SECRET'
+    ),
+    body := '{}'::jsonb
   );
   $$
 );
 ```
+
+> **Note**: The `X-Cron-Secret` value must match the `CRON_SECRET` set in edge function secrets.
 
 ---
 
@@ -200,7 +207,7 @@ SELECT cron.schedule(
 | Variable | Required | Description |
 |----------|----------|-------------|
 | VITE_SUPABASE_URL | Yes | Supabase project URL |
-| VITE_SUPABASE_ANON_KEY | Yes | Supabase anon key |
+| VITE_SUPABASE_PUBLISHABLE_KEY | Yes | Supabase anon/publishable key |
 
 ### Edge Functions (Runtime)
 
@@ -212,7 +219,10 @@ SELECT cron.schedule(
 | ELEVENLABS_API_KEY | Yes | ElevenLabs API key |
 | TWILIO_ACCOUNT_SID | Yes | Twilio account SID |
 | TWILIO_AUTH_TOKEN | Yes | Twilio auth token |
-| TWILIO_PHONE_NUMBER | Yes | Twilio phone number |
+| TWILIO_PHONE_NUMBER | Yes | Twilio phone number (E.164) |
+| DEEPGRAM_API_KEY | Yes | Deepgram API key (speech-to-text) |
+| ANTHROPIC_API_KEY | Yes | Anthropic API key (voice-to-form parsing) |
+| CRON_SECRET | Yes | Shared secret for cron job auth |
 
 ---
 
@@ -224,6 +234,8 @@ SELECT cron.schedule(
 - [ ] API keys are production keys
 - [ ] Secrets not in version control
 - [ ] HTTPS enforced
+- [ ] JWT auth on all user-facing edge functions
+- [ ] CRON_SECRET set for check-reminders
 
 ### Performance
 
@@ -241,7 +253,7 @@ SELECT cron.schedule(
 ### Testing
 
 - [ ] Test call delivery
-- [ ] Test voice cloning
+- [ ] Test voice input (speech-to-text)
 - [ ] Test recurring reminders
 - [ ] Test across regions
 
@@ -272,6 +284,8 @@ SELECT cron.schedule(
 
 - **Twilio**: Monitor concurrent calls
 - **ElevenLabs**: Watch character usage
+- **Deepgram**: Monitor transcription hours
+- **Anthropic**: Monitor token usage
 
 ---
 
