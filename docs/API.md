@@ -4,11 +4,13 @@ This document describes the Supabase Edge Functions that power Yaad's backend.
 
 ## Authentication
 
-All endpoints require a Bearer token in the Authorization header:
+Most endpoints require a Bearer token (JWT) in the Authorization header:
 
 ```
 Authorization: Bearer <supabase_jwt_token>
 ```
+
+Exceptions are noted per endpoint.
 
 ## Base URL
 
@@ -28,6 +30,10 @@ Initiate a voice call with a TTS message.
 POST /make-call
 ```
 
+### Authentication
+
+Bearer JWT token (must match `userId`).
+
 ### Request Body
 
 ```json
@@ -36,8 +42,7 @@ POST /make-call
   "recipientName": "string (2-100 chars)",
   "phoneNumber": "string (E.164 format: +1234567890)",
   "message": "string (1-500 chars)",
-  "voice": "friendly_female" | "friendly_male" | "custom",
-  "customVoiceId": "uuid (optional, required if voice is 'custom')",
+  "voice": "friendly_female" | "friendly_male",
   "userId": "uuid"
 }
 ```
@@ -68,7 +73,7 @@ POST /make-call
 
 ### Flow
 
-1. Validate authentication
+1. Validate JWT authentication
 2. Validate input (phone format, message length, voice)
 3. Create call_history record (status: pending)
 4. Generate speech via ElevenLabs
@@ -82,7 +87,7 @@ POST /make-call
 
 ## check-reminders
 
-Process due reminders and initiate calls. Typically called by cron job.
+Process due reminders and initiate calls. Called by cron job.
 
 ### Endpoint
 
@@ -90,11 +95,15 @@ Process due reminders and initiate calls. Typically called by cron job.
 POST /check-reminders
 ```
 
-### Headers
+### Authentication
+
+Requires `X-Cron-Secret` header matching the `CRON_SECRET` environment variable:
 
 ```
-Authorization: Bearer <service_role_key>
+X-Cron-Secret: <your_cron_secret>
 ```
+
+> **Note**: This endpoint does NOT use Bearer token auth. It uses a shared secret for cron job authentication.
 
 ### Request Body
 
@@ -113,162 +122,74 @@ None required.
 
 ### Flow
 
-1. Query reminders where `scheduled_at <= now()` and `is_active = true`
-2. For each reminder:
+1. Validate `X-Cron-Secret` header
+2. Query reminders where `scheduled_at <= now()` and `is_active = true`
+3. For each reminder:
    - Call `make-call` function
-   - Update `last_called_at`
-   - Handle recurring logic (daily/weekly)
-3. Return processing summary
+   - Update `scheduled_at` for recurring reminders
+   - Deactivate one-time reminders
+4. Return processing summary
 
 ---
 
-## create-voice-clone
+## deepgram-proxy
 
-Create a custom voice clone from audio recording.
+WebSocket proxy for real-time speech-to-text via Deepgram.
 
-### Endpoint
+### Protocol
 
 ```
-POST /create-voice-clone
+WebSocket wss://<your-project>.supabase.co/functions/v1/deepgram-proxy?language=en&token=<jwt_token>
 ```
 
-### Request Body
+### Authentication
+
+JWT token passed as a `token` query parameter. The function validates the token before establishing the Deepgram connection.
+
+### Query Parameters
+
+| Parameter | Required | Description |
+|-----------|----------|-------------|
+| `token` | Yes | Supabase JWT token |
+| `language` | No | Language code (default: `en`) |
+
+### Communication
+
+- **Client → Server**: Raw audio bytes (WebM/Opus format)
+- **Server → Client**: JSON transcript messages from Deepgram
+
+### Transcript Message Format
 
 ```json
 {
-  "audioBase64": "string (base64 encoded audio)",
-  "voiceName": "string (1-50 chars)"
+  "type": "Results",
+  "channel": {
+    "alternatives": [
+      {
+        "transcript": "call mom tomorrow at 9am",
+        "confidence": 0.98
+      }
+    ]
+  },
+  "is_final": true
 }
 ```
-
-### Response
-
-**Success (200)**
-```json
-{
-  "success": true,
-  "voiceId": "uuid",
-  "message": "Voice created successfully"
-}
-```
-
-**Errors**
-
-| Status | Error | Description |
-|--------|-------|-------------|
-| 400 | Missing audio data or voice name | Required fields missing |
-| 400 | Voice name must be 1-50 characters | Invalid name length |
-| 400 | Already have a voice clone | User limited to 1 voice |
-| 401 | Unauthorized | Invalid token |
-| 500 | Voice cloning failed | ElevenLabs error |
-
-### Flow
-
-1. Validate authentication
-2. Check if user already has a voice (limit: 1)
-3. Create user_voices record (status: processing)
-4. Convert base64 to audio blob
-5. Call ElevenLabs voice cloning API
-6. Update record with voice ID (status: ready)
-7. Return success
-
----
-
-## delete-voice-clone
-
-Delete a user's custom voice clone.
-
-### Endpoint
-
-```
-DELETE /delete-voice-clone
-```
-
-### Request Body
-
-```json
-{
-  "voiceId": "uuid"
-}
-```
-
-### Response
-
-**Success (200)**
-```json
-{
-  "success": true,
-  "message": "Voice deleted successfully"
-}
-```
-
-**Errors**
-
-| Status | Error | Description |
-|--------|-------|-------------|
-| 400 | Missing voice ID | Required field missing |
-| 401 | Unauthorized | Invalid token |
-| 404 | Voice not found | Voice doesn't exist or not owned |
-| 500 | Failed to delete voice | ElevenLabs error |
-
-### Flow
-
-1. Validate authentication
-2. Fetch voice record (verify ownership)
-3. Delete from ElevenLabs
-4. Delete from user_voices table
-5. Return success
-
----
-
-## preview-voice
-
-Generate a short voice preview without making a call.
-
-### Endpoint
-
-```
-POST /preview-voice
-```
-
-### Request Body
-
-```json
-{
-  "text": "string (preview text)",
-  "voice": "friendly_female" | "friendly_male" | "custom",
-  "customVoiceId": "uuid (optional)"
-}
-```
-
-### Response
-
-**Success (200)**
-```json
-{
-  "success": true,
-  "audioUrl": "signed URL to audio"
-}
-```
-
-### Flow
-
-1. Validate authentication
-2. Generate speech via ElevenLabs
-3. Upload to Storage
-4. Return signed URL
 
 ---
 
 ## parse-voice-reminder
 
-Use AI to parse natural language into reminder fields.
+Use AI (Anthropic Claude) to parse natural language into structured reminder fields.
 
 ### Endpoint
 
 ```
 POST /parse-voice-reminder
 ```
+
+### Authentication
+
+Bearer JWT token required.
 
 ### Request Body
 
@@ -293,6 +214,14 @@ POST /parse-voice-reminder
 }
 ```
 
+**Errors**
+
+| Status | Error | Description |
+|--------|-------|-------------|
+| 401 | Unauthorized | Missing or invalid JWT |
+| 400 | Missing text | No transcript provided |
+| 500 | Parsing failed | Anthropic API error |
+
 ---
 
 ## twilio-status-callback
@@ -304,6 +233,10 @@ Webhook to receive Twilio call status updates.
 ```
 POST /twilio-status-callback
 ```
+
+### Authentication
+
+This endpoint is called by Twilio. No Bearer token required — the function validates the request origin.
 
 ### Request (from Twilio)
 
@@ -324,7 +257,7 @@ AnsweredBy=human|machine
 
 ### Flow
 
-1. Validate request is from Twilio
+1. Parse form-encoded Twilio request
 2. Find call_history by twilio_call_sid
 3. Update status based on CallStatus:
    - `completed` + human → `completed`
@@ -339,7 +272,7 @@ AnsweredBy=human|machine
 
 ## Error Response Format
 
-All endpoints return errors in this format:
+All HTTP endpoints return errors in this format:
 
 ```json
 {
@@ -352,3 +285,4 @@ All endpoints return errors in this format:
 - Supabase Edge Functions: 500 requests/minute per IP
 - ElevenLabs: Based on subscription tier
 - Twilio: Based on account settings
+- Deepgram: Based on subscription tier

@@ -4,11 +4,13 @@ This document describes the PostgreSQL database schema used by Yaad via Supabase
 
 ## Overview
 
-Yaad uses four main tables:
+Yaad uses four active tables:
 - `profiles` - User preferences
 - `reminders` - Scheduled reminders
 - `call_history` - Call logs
-- `user_voices` - Custom voice clones
+- `contacts` - User contacts
+
+> **Note**: The `user_voices` table exists in the schema but is **deprecated** — the custom voice cloning feature has been removed. The table and its foreign key (`reminders.custom_voice_id`) remain for migration compatibility but are not used by the application.
 
 All tables have Row Level Security (RLS) enabled.
 
@@ -63,6 +65,11 @@ CREATE TABLE public.reminders (
     is_active BOOLEAN NOT NULL DEFAULT true,
     repeat_count INTEGER NOT NULL DEFAULT 0,
     repeat_until TIMESTAMPTZ,
+    max_occurrences INTEGER,
+    recurrence_interval INTEGER,
+    recurrence_days_of_week INTEGER[],
+    recurrence_day_of_month INTEGER,
+    recurrence_week_of_month INTEGER,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -75,15 +82,22 @@ CREATE TABLE public.reminders (
 | recipient_name | TEXT | Name of call recipient |
 | phone_number | TEXT | E.164 format (+1234567890) |
 | message | TEXT | Message to deliver (max 500 chars) |
-| voice | TEXT | Voice to use |
-| custom_voice_id | UUID | Reference to user's custom voice |
+| voice | TEXT | Voice to use (`friendly_female` or `friendly_male`) |
+| custom_voice_id | UUID | **Deprecated** — unused |
 | scheduled_at | TIMESTAMPTZ | When to make the call |
 | frequency | TEXT | once, daily, or weekly |
 | is_active | BOOLEAN | Whether reminder is enabled |
 | repeat_count | INTEGER | Number of times repeated |
 | repeat_until | TIMESTAMPTZ | End date for recurring |
+| max_occurrences | INTEGER | Max number of occurrences |
+| recurrence_interval | INTEGER | Interval for custom recurrence |
+| recurrence_days_of_week | INTEGER[] | Days of week for custom recurrence |
+| recurrence_day_of_month | INTEGER | Day of month for monthly recurrence |
+| recurrence_week_of_month | INTEGER | Week of month for monthly recurrence |
 | created_at | TIMESTAMPTZ | Record creation time |
 | updated_at | TIMESTAMPTZ | Last update time |
+
+> **Note**: The `voice` CHECK constraint includes `'custom'` and `custom_voice_id` FK for schema compatibility, but the application only uses `friendly_female` and `friendly_male`.
 
 ---
 
@@ -138,9 +152,35 @@ CREATE TABLE public.call_history (
 
 ---
 
-### user_voices
+### contacts
 
-Stores custom voice clones created by users.
+Stores user contacts for quick recipient selection.
+
+```sql
+CREATE TABLE public.contacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    phone_number TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | UUID | Primary key |
+| user_id | UUID | Owner, references auth.users |
+| name | TEXT | Contact name |
+| phone_number | TEXT | E.164 format (+1234567890) |
+| created_at | TIMESTAMPTZ | Record creation time |
+| updated_at | TIMESTAMPTZ | Last update time |
+
+---
+
+### user_voices (Deprecated)
+
+> ⚠️ **This table is deprecated.** The custom voice cloning feature has been removed from the application. The table remains in the database for migration compatibility.
 
 ```sql
 CREATE TABLE public.user_voices (
@@ -155,17 +195,6 @@ CREATE TABLE public.user_voices (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ```
-
-| Column | Type | Description |
-|--------|------|-------------|
-| id | UUID | Primary key |
-| user_id | UUID | Owner |
-| name | TEXT | User-provided name for voice |
-| elevenlabs_voice_id | TEXT | ElevenLabs voice identifier |
-| status | TEXT | processing, ready, or failed |
-| error_message | TEXT | Error details if failed |
-| created_at | TIMESTAMPTZ | Record creation time |
-| updated_at | TIMESTAMPTZ | Last update time |
 
 ---
 
@@ -255,6 +284,10 @@ ON public.call_history(user_id, attempted_at DESC);
 CREATE INDEX idx_call_history_twilio_sid 
 ON public.call_history(twilio_call_sid) 
 WHERE twilio_call_sid IS NOT NULL;
+
+-- Contacts: User's contacts
+CREATE INDEX idx_contacts_user_id 
+ON public.contacts(user_id);
 ```
 
 ---
@@ -271,17 +304,17 @@ WHERE twilio_call_sid IS NOT NULL;
 └─────────────┘       └─────────────┘
       │
       │ user_id
-      ▼
-┌─────────────┐       ┌─────────────┐
-│  reminders  │       │ user_voices │
-├─────────────┤       ├─────────────┤
-│ id (PK)     │       │ id (PK)     │
-│ user_id (FK)│       │ user_id (FK)│
-│ recipient   │◄──────│ name        │
-│ phone       │  FK   │ elevenlabs_id│
-│ message     │       │ status      │
-│ voice       │       └─────────────┘
-│ custom_voice_id (FK)│
+      ├──────────────────────────────┐
+      ▼                              ▼
+┌─────────────┐               ┌─────────────┐
+│  reminders  │               │  contacts   │
+├─────────────┤               ├─────────────┤
+│ id (PK)     │               │ id (PK)     │
+│ user_id (FK)│               │ user_id (FK)│
+│ recipient   │               │ name        │
+│ phone       │               │ phone_number│
+│ message     │               └─────────────┘
+│ voice       │
 │ scheduled_at│
 │ frequency   │
 └─────────────┘

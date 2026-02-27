@@ -24,44 +24,45 @@
 ### Why Yaad?
 
 - 📞 **Voice Calls, Not Texts**: Sometimes a call means more than a message
-- ⏰ **Flexible Scheduling**: One-time, daily, or weekly reminders
+- ⏰ **Flexible Scheduling**: One-time, daily, weekly, or custom frequency reminders
 - 👨‍👩‍👧‍👦 **Family-Friendly**: Perfect for reminding elderly parents about medications or checking in
 - 🌍 **International Support**: Works with phone numbers worldwide
+- 🎙️ **Voice-to-Form**: Speak your reminder naturally and AI fills in the details
 
 ## Features
 
 ### Core Features
 - ✅ Schedule voice reminder calls
-- ✅ Choose from preset voices (friendly female/male)
-- ✅ Clone your own voice for personalized calls
-- ✅ Recurring reminders (daily, weekly)
-- ✅ Call history tracking
-- ✅ Contact management
+- ✅ Choose from preset AI voices (friendly female/male)
+- ✅ Recurring reminders (daily, weekly, custom frequencies)
+- ✅ Voice-to-Form: speak a reminder and AI parses it into structured fields
+- ✅ Medication reminder templates
+- ✅ Call history tracking with detailed status
+- ✅ Contact management with contact picker
+- ✅ International phone number support with cost estimates
+- ✅ Mobile-responsive PWA
 
 ### Voice Options
-- **Preset Voices**: Professional, natural-sounding AI voices
-- **Custom Voice Clone**: Record 30 seconds of audio to create your own voice
+- **Friendly Female**: Natural-sounding AI voice
+- **Friendly Male**: Natural-sounding AI voice
 
 ### Integrations
 - **Twilio**: Reliable phone call delivery
-- **ElevenLabs**: Advanced AI voice synthesis and cloning
-- **Supabase**: Secure authentication and data storage
-
-## Screenshots
-
-<!-- Add screenshots here -->
-| Home | Schedule Reminder | Voice Cloning |
-|------|-------------------|---------------|
-| ![Home](docs/screenshots/home.png) | ![Schedule](docs/screenshots/schedule.png) | ![Voice](docs/screenshots/voice.png) |
+- **ElevenLabs**: Advanced AI voice synthesis (text-to-speech)
+- **Deepgram**: Real-time speech-to-text for voice input
+- **Anthropic Claude**: AI-powered natural language parsing
+- **Supabase**: Secure authentication, database, storage, and edge functions
 
 ## Quick Start
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 18+
 - npm or bun
 - Supabase account
 - Twilio account
 - ElevenLabs account
+- Deepgram account
+- Anthropic account
 
 ### Installation
 
@@ -113,7 +114,9 @@ See [SETUP.md](SETUP.md) for detailed setup instructions.
 
 ### External Services
 - **Twilio** - Voice calls
-- **ElevenLabs** - AI voice synthesis
+- **ElevenLabs** - AI voice synthesis (TTS)
+- **Deepgram** - Speech-to-text (voice input)
+- **Anthropic Claude** - Natural language parsing
 
 ## Project Structure
 
@@ -121,28 +124,26 @@ See [SETUP.md](SETUP.md) for detailed setup instructions.
 call-me-back-soon/
 ├── src/
 │   ├── components/       # React components
-│   │   ├── auth/         # Authentication components
-│   │   ├── contacts/     # Contact management
-│   │   ├── history/      # Call history
-│   │   ├── layout/       # Layout components
-│   │   ├── phone/        # Phone input components
-│   │   ├── reminders/    # Reminder scheduling
+│   │   ├── auth/         # Authentication (ProtectedRoute)
+│   │   ├── contacts/     # Contact management (ContactCard, ContactForm, ContactPicker)
+│   │   ├── history/      # Call history (CallHistoryDetailDialog)
+│   │   ├── layout/       # Layout (AppLayout, BottomNav, PageHeader)
+│   │   ├── phone/        # Phone input (InternationalPhoneInput, CountryPicker, CallCostEstimate)
+│   │   ├── reminders/    # Reminder scheduling (CreateReminderDialog, EditReminderDialog, MedicationReminderForm, VoiceInputSection, FrequencyPicker, TemplatePicker, etc.)
 │   │   ├── ui/           # shadcn/ui components
-│   │   └── voices/       # Voice selection/cloning
-│   ├── config/           # App configuration
-│   ├── hooks/            # Custom React hooks
+│   │   └── voices/       # Voice selection (VoiceSelector)
+│   ├── config/           # App configuration (countries, pricing)
+│   ├── hooks/            # Custom React hooks (useAuth, useReminders, useContacts, useCallHistory, useVoiceRecorder, useVoiceReminderParser, etc.)
 │   ├── integrations/     # Supabase client
-│   ├── lib/              # Utilities
-│   ├── pages/            # Route pages
+│   ├── lib/              # Utilities (phoneUtils, medicationUtils, recurrenceUtils, timezones)
+│   ├── pages/            # Route pages (Home, History, Contacts, Voices, Profile, Login, SignUp, Welcome)
 │   └── test/             # Test utilities
 ├── supabase/
 │   ├── functions/        # Edge functions
 │   │   ├── check-reminders/
-│   │   ├── create-voice-clone/
-│   │   ├── delete-voice-clone/
+│   │   ├── deepgram-proxy/
 │   │   ├── make-call/
 │   │   ├── parse-voice-reminder/
-│   │   ├── preview-voice/
 │   │   └── twilio-status-callback/
 │   └── migrations/       # Database migrations
 └── docs/                 # Documentation
@@ -165,6 +166,8 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 - [Lovable](https://lovable.dev) - AI-powered development
 - [Twilio](https://twilio.com) - Voice API
 - [ElevenLabs](https://elevenlabs.io) - Voice AI
+- [Deepgram](https://deepgram.com) - Speech-to-text
+- [Anthropic](https://anthropic.com) - AI language models
 - [Supabase](https://supabase.com) - Backend infrastructure
 
 ---
